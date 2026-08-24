@@ -4,23 +4,25 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Voice Coach</title>
+<link rel="icon" type="image/png" href="favicon.png" />
+<link rel="apple-touch-icon" href="favicon.png" />
 <style>
   :root{
-    --bg:#0a0b10;
-    --bg2:#111320;
-    --fg:#e9e9f5;
-    --dim:#8b8ca6;
-    --accent:#7c5cff;
-    --accent2:#22d3c7;
-    --danger:#ff5c7a;
-    --panel:#151726;
-    --border:#262940;
+    --bg:#0d0d0d;
+    --bg2:#171717;
+    --fg:#ececec;
+    --dim:#8e8e93;
+    --accent:#e8e8e8;
+    --accent2:#a1a1a6;
+    --danger:#ff5c5c;
+    --panel:#1c1c1e;
+    --border:#2e2e30;
   }
   *{box-sizing:border-box;}
   html,body{height:100%;}
   body{
     margin:0;
-    background:radial-gradient(circle at 50% 20%, #171a2c 0%, var(--bg) 60%);
+    background:radial-gradient(circle at 50% 20%, #1a1a1a 0%, var(--bg) 60%);
     color:var(--fg);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     display:flex;
@@ -269,14 +271,14 @@
     width:150px;
     height:150px;
     border-radius:50%;
-    background:radial-gradient(circle at 35% 30%, #3a3d5c, #14162a 70%);
+    background:radial-gradient(circle at 35% 30%, #3a3a3c, #131313 70%);
     border:1px solid var(--border);
     cursor:pointer;
     display:flex;
     align-items:center;
     justify-content:center;
     transition:box-shadow .4s ease, background .4s ease, transform .2s ease;
-    box-shadow:0 0 0 rgba(124,92,255,0);
+    box-shadow:0 0 0 rgba(255,255,255,0);
   }
   .orb:active{ transform:scale(.97); }
   .orb svg{ width:46px; height:46px; opacity:.85; }
@@ -287,35 +289,35 @@
   }
   /* connecting: fast pulse */
   .app[data-state="connecting"] .orb{
-    background:radial-gradient(circle at 35% 30%, #4a4570, #14162a 70%);
+    background:radial-gradient(circle at 35% 30%, #4a4a4a, #131313 70%);
     animation:pulseFast 1s ease-in-out infinite;
   }
-  /* listening: calm accent glow, mic is "open" */
+  /* listening: calm glow, mic is "open" */
   .app[data-state="listening"] .orb{
-    background:radial-gradient(circle at 35% 30%, #2c3a5c, #101322 70%);
-    box-shadow:0 0 40px rgba(34,211,199,.25);
+    background:radial-gradient(circle at 35% 30%, #2f2f31, #101010 70%);
+    box-shadow:0 0 40px rgba(255,255,255,.15);
   }
-  /* user_speaking: accent2 ring animates outward */
+  /* user_speaking: ring animates outward */
   .app[data-state="user_speaking"] .orb-ring{
     border-color:var(--accent2);
     animation:ripple 1.4s ease-out infinite;
   }
   .app[data-state="user_speaking"] .orb{
-    box-shadow:0 0 55px rgba(34,211,199,.45);
+    box-shadow:0 0 55px rgba(255,255,255,.3);
   }
   /* thinking: spinning subtle */
   .app[data-state="thinking"] .orb{
-    background:radial-gradient(circle at 35% 30%, #5c4a80, #14162a 70%);
+    background:radial-gradient(circle at 35% 30%, #4d4d4d, #131313 70%);
     animation:pulseFast 0.8s ease-in-out infinite;
   }
-  /* assistant_speaking: accent ring */
+  /* assistant_speaking: brighter ring */
   .app[data-state="assistant_speaking"] .orb-ring{
     border-color:var(--accent);
     animation:ripple 1.1s ease-out infinite;
   }
   .app[data-state="assistant_speaking"] .orb{
-    box-shadow:0 0 60px rgba(124,92,255,.5);
-    background:radial-gradient(circle at 35% 30%, #4a3d80, #14162a 70%);
+    box-shadow:0 0 60px rgba(255,255,255,.45);
+    background:radial-gradient(circle at 35% 30%, #575757, #131313 70%);
   }
   /* error */
   .app[data-state="error"] .orb{
@@ -424,7 +426,7 @@
   .fc-word{ font-size:14px; font-weight:600; }
   .fc-translation{ font-size:12px; color:var(--dim); margin-top:2px; }
   .fc-due{ font-size:11px; color:var(--dim); white-space:nowrap; }
-  .fc-due.is-due{ color:var(--accent2); font-weight:600; }
+  .fc-due.is-due{ color:var(--fg); font-weight:700; }
   .fc-delete{
     background:transparent; border:none; color:var(--dim);
     cursor:pointer; font-size:14px; padding:4px 6px; line-height:1;
@@ -447,8 +449,8 @@
     padding:0 1px;
     transition:background .1s;
   }
-  .word:hover{ background:rgba(124,92,255,.35); }
-  .word.added{ background:rgba(34,211,199,.3); text-decoration:underline; text-decoration-color:var(--accent2); }
+  .word:hover{ background:rgba(255,255,255,.18); }
+  .word.added{ background:rgba(255,255,255,.1); text-decoration:underline; text-decoration-color:var(--accent2); }
   .word.no-select{ cursor:default; }
   .word.no-select:hover{ background:transparent; }
 
@@ -472,7 +474,7 @@
     cursor:pointer;
   }
   .grade-btn.again{ border-color:var(--danger); color:var(--danger); }
-  .grade-btn.hard{ border-color:#e0a940; color:#e0a940; }
+  .grade-btn.hard{ border-color:var(--dim); color:var(--dim); }
   .grade-btn.good{ border-color:var(--accent2); color:var(--accent2); }
   .grade-btn.easy{ border-color:var(--accent); color:var(--accent); }
 </style>
