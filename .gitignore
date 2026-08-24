@@ -1,0 +1,6 @@
+.DS_Store
+.claude/
+
+# Docs written for a different app (HabitCasinoAI.html) that isn't in this repo
+CLAUDE.md
+AGENTS.md
