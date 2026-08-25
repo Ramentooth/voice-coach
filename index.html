@@ -1856,7 +1856,18 @@ function humanizeError(err) {
 /* Transcript review — tap a word to translate + save it as a flashcard   */
 /* ---------------------------------------------------------------------- */
 
-function tokenizeForSelection(text) {
+function tokenizeForSelection(text, langCode = currentSessionLanguage) {
+  // Use real locale-aware boundaries for languages without spaces while
+  // retaining whitespace and punctuation so the text reconstructs exactly.
+  if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
+    try {
+      const segmenter = new Intl.Segmenter(langCode, { granularity: "word" });
+      return Array.from(segmenter.segment(text), ({ segment }) => segment)
+        .filter((segment) => segment.length > 0);
+    } catch (e) {
+      // Fall through for unsupported locales or older implementations.
+    }
+  }
   return text.split(/(\s+)/).filter((t) => t.length > 0);
 }
 
@@ -1890,14 +1901,11 @@ function naivePhraseChunks(tokens, groupSize) {
   return chunks;
 }
 
-// Fallback segmentation used before analysis resolves, and for any line the
-// model's segmentation fails validation on. Whitespace-splitting is exact
-// for space-delimited languages, including a real multi-word phrase grouping
-// (not just the whole line as one lump); for CJK it degrades to "whole line
-// is one word/phrase" since there's no whitespace to split on, which is why
-// analyzeTranscriptSegments() exists — this is only the fallback.
-function naiveSegments(text) {
-  const tokens = tokenizeForSelection(text);
+// Fallback segmentation used before analysis resolves and for any line whose
+// model segmentation fails validation. Intl.Segmenter supplies local word
+// boundaries for both space-delimited languages and languages such as CJK.
+function naiveSegments(text, langCode = currentSessionLanguage) {
+  const tokens = tokenizeForSelection(text, langCode);
   const words = tokens.length ? tokens : [text];
   const phrases = tokens.length ? naivePhraseChunks(tokens, 3) : [text];
   return { words, phrases: phrases.length ? phrases : [text] };
@@ -1906,17 +1914,27 @@ function naiveSegments(text) {
 // Splits a marker-delimited string back into its original pieces, but only
 // if doing so reconstructs the original text exactly — guards against the
 // model altering characters instead of just inserting boundary markers.
-function splitMarked(marked, delimiter, original) {
+function splitMarked(marked, delimiter, original, fallbackParts) {
   if (typeof marked !== "string") return null;
   const parts = marked.split(delimiter);
   if (parts.join("") !== original) return null;
-  return parts.filter((p) => p.length > 0);
+  const nonEmptyParts = parts.filter((p) => p.length > 0);
+  // An unchanged response technically reconstructs but contains no useful
+  // boundaries. Reject it when local segmentation found multiple chunks.
+  if (
+    nonEmptyParts.filter(cleanWord).length <= 1 &&
+    (fallbackParts || []).filter(cleanWord).length > 1
+  ) return null;
+  return nonEmptyParts;
 }
 
 let segmentCache = [];       // parallel to transcriptHistory: [{words:[...], phrases:[...]}]
 let segmentMode = "words";   // "words" | "phrases" — which cached array to render
+let segmentationGeneration = 0; // prevents stale analysis replacing a newer review
 
 async function openTranscriptReview() {
+  const generation = ++segmentationGeneration;
+  const historySnapshot = transcriptHistory.map((entry) => ({ ...entry }));
   segmentMode = "words";
   $$(".pill-toggle-btn", $("segToggle")).forEach((b) => b.classList.toggle("active", b.dataset.seg === "words"));
   $("transcriptReviewModal").classList.remove("hidden");
@@ -1927,30 +1945,33 @@ async function openTranscriptReview() {
     return;
   }
 
-  // Render immediately with naive whitespace segmentation so something's on
-  // screen right away, then upgrade in place once analysis resolves.
-  segmentCache = transcriptHistory.map((e) => naiveSegments(e.text));
+  // Render immediately with local segmentation, then upgrade phrase/word
+  // boundaries in place once model analysis resolves.
+  segmentCache = historySnapshot.map((e) => naiveSegments(e.text, currentSessionLanguage));
   renderTranscriptReviewBody();
   $("trAnalyzing").classList.remove("hidden");
   $("trBody").classList.add("analyzing");
 
   try {
     const analyzed = await analyzeTranscriptSegments(
-      transcriptHistory.map((e) => e.text),
+      historySnapshot.map((e) => e.text),
       currentSessionLanguage
     );
-    segmentCache = transcriptHistory.map((entry, i) => {
-      const fallback = naiveSegments(entry.text);
-      const words = splitMarked(analyzed[i]?.words, WORD_DELIM, entry.text);
-      const phrases = splitMarked(analyzed[i]?.phrases, PHRASE_DELIM, entry.text);
+    if (generation !== segmentationGeneration) return;
+    segmentCache = historySnapshot.map((entry, i) => {
+      const fallback = naiveSegments(entry.text, currentSessionLanguage);
+      const words = splitMarked(analyzed[i]?.words, WORD_DELIM, entry.text, fallback.words);
+      const phrases = splitMarked(analyzed[i]?.phrases, PHRASE_DELIM, entry.text, fallback.phrases);
       return {
         words: words && words.length ? words : fallback.words,
         phrases: phrases && phrases.length ? phrases : fallback.phrases,
       };
     });
   } catch (err) {
+    if (generation !== segmentationGeneration) return;
     console.error("[VoiceCoach] transcript analysis failed, using naive segmentation:", err);
   } finally {
+    if (generation !== segmentationGeneration) return;
     $("trAnalyzing").classList.add("hidden");
     $("trBody").classList.remove("analyzing");
     renderTranscriptReviewBody();
@@ -2005,6 +2026,7 @@ $("segToggle").addEventListener("click", (e) => {
 });
 
 $("closeTranscriptReviewBtn").addEventListener("click", () => {
+  segmentationGeneration += 1;
   $("transcriptReviewModal").classList.add("hidden");
 });
 
@@ -2439,6 +2461,9 @@ $("orbBtn").addEventListener("click", () => {
 });
 
 $("endSessionBtn").addEventListener("click", () => {
+  // Preserve displayed deltas when the final transcript event has not arrived.
+  setTranscriptFinal("user");
+  setTranscriptFinal("assistant");
   endSession();
   openTranscriptReview();
 });
