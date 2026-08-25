@@ -441,6 +441,11 @@
     display:flex;
     align-items:center;
     gap:8px;
+  }
+  .fc-folder-toggle{
+    display:flex;
+    align-items:center;
+    gap:8px;
     background:none;
     border:none;
     padding:4px 2px;
@@ -448,7 +453,8 @@
     color:var(--fg);
     font:inherit;
     text-align:left;
-    width:100%;
+    flex:1;
+    min-width:0;
   }
   .fc-folder-chevron{
     flex-shrink:0;
@@ -460,6 +466,18 @@
   .fc-folder.collapsed .fc-folder-chevron{ transform:rotate(-90deg); }
   .fc-folder-name{ font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; }
   .fc-folder-count{ font-size:12px; color:var(--dim); margin-left:auto; }
+  .fc-folder-review-btn{
+    flex-shrink:0;
+    font-size:12px;
+    font-weight:700;
+    padding:6px 12px;
+    border-radius:999px;
+    border:1px solid var(--border);
+    background:var(--panel);
+    color:var(--fg);
+    cursor:pointer;
+  }
+  .fc-folder-review-btn:disabled{ opacity:.35; cursor:default; }
   .fc-folder-rows{ display:flex; flex-direction:column; gap:8px; }
   .fc-folder.collapsed .fc-folder-rows{ display:none; }
   .fc-row{
@@ -712,8 +730,8 @@
     <div>
       <h1>Flashcards</h1>
       <p class="sub" id="fcSummary" style="margin:0;">0 due today &middot; 0 total</p>
+      <p class="sub" style="margin:2px 0 0;">Each language reviews separately — use the Review button on its folder.</p>
     </div>
-    <button class="btn btn-primary" id="startReviewBtn">Start review</button>
     <div class="fc-list" id="fcList">
       <div class="transcript-empty">No flashcards yet — end a session to add some.</div>
     </div>
@@ -756,7 +774,7 @@
 <!-- ============ ADD-WORD MODAL ============ -->
 <div class="modal-backdrop hidden" id="wordModal">
   <div class="modal">
-    <h2>Add flashcard</h2>
+    <h2 id="wordModalTitle">Add flashcard</h2>
     <div class="field">
       <label for="wordInput">Word</label>
       <input type="text" id="wordInput" spellcheck="false" />
@@ -1074,12 +1092,15 @@ async function analyzeTranscriptSegments(lines, langCode) {
             `where you must split by actual words, not by character. Also insert the ` +
             `marker "${PHRASE_DELIM}" between every meaningful phrase chunk (roughly ` +
             `2-6 words each, grouping related words together, e.g. a verb phrase or ` +
-            `noun phrase). Do not add, remove, translate, reorder, or otherwise alter a ` +
-            `single character of the input — including whitespace and punctuation — ` +
-            `only insert the two marker characters at boundaries. Respond with strict ` +
-            `JSON only: {"segments": [...]}, where "segments" has exactly ${lines.length} ` +
-            `elements in the same order as the input, one per input line, each ` +
-            `{"words": "...", "phrases": "..."}.`,
+            `noun phrase — a whole short sentence may be a single phrase, but a longer ` +
+            `sentence must be split into more than one). For BOTH "words" and "phrases", ` +
+            `removing only the marker characters must leave the input line exactly, ` +
+            `character-for-character, byte-for-byte identical to the original — do not ` +
+            `normalize, straighten, or otherwise substitute quotes, dashes, ellipses, or ` +
+            `any other character, and do not add/remove/translate/reorder any character or ` +
+            `whitespace. Respond with strict JSON only: {"segments": [...]}, where ` +
+            `"segments" has exactly ${lines.length} elements in the same order as the ` +
+            `input, one per input line, each {"words": "...", "phrases": "..."}.`,
         },
         { role: "user", content: JSON.stringify(lines) },
       ],
@@ -1846,13 +1867,40 @@ function cleanWord(token) {
   return token.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
 }
 
+// Groups tokens (as returned by tokenizeForSelection — real words and the
+// whitespace runs between them, interleaved) into ~groupSize-word chunks.
+// Each chunk stays a contiguous slice of the original tokens, so joining
+// every chunk back together always exactly reconstructs the input text.
+function naivePhraseChunks(tokens, groupSize) {
+  const chunks = [];
+  let current = "";
+  let realCount = 0;
+  tokens.forEach((tok) => {
+    current += tok;
+    if (cleanWord(tok)) {
+      realCount += 1;
+      if (realCount >= groupSize) {
+        chunks.push(current);
+        current = "";
+        realCount = 0;
+      }
+    }
+  });
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 // Fallback segmentation used before analysis resolves, and for any line the
 // model's segmentation fails validation on. Whitespace-splitting is exact
-// for space-delimited languages; for CJK it degrades to "whole line is one
-// word", which is why analyzeTranscriptSegments() exists.
+// for space-delimited languages, including a real multi-word phrase grouping
+// (not just the whole line as one lump); for CJK it degrades to "whole line
+// is one word/phrase" since there's no whitespace to split on, which is why
+// analyzeTranscriptSegments() exists — this is only the fallback.
 function naiveSegments(text) {
-  const words = tokenizeForSelection(text);
-  return { words: words.length ? words : [text], phrases: [text] };
+  const tokens = tokenizeForSelection(text);
+  const words = tokens.length ? tokens : [text];
+  const phrases = tokens.length ? naivePhraseChunks(tokens, 3) : [text];
+  return { words, phrases: phrases.length ? phrases : [text] };
 }
 
 // Splits a marker-delimited string back into its original pieces, but only
@@ -1961,10 +2009,14 @@ $("closeTranscriptReviewBtn").addEventListener("click", () => {
 });
 
 // The audio blob (if any) belonging to the word currently open in the
-// add-word modal, plus the object URL used to preview it — tracked so we
-// can persist it on save and revoke it on close either way.
+// word modal, plus the object URL used to preview it — tracked so we can
+// persist it on save (new cards only) and revoke it on close either way.
 let pendingAudioBlob = null;
 let pendingAudioUrl = null;
+
+// Set to an existing card's id while the modal is editing that card rather
+// than creating a new one from a transcript word (see openEditCardModal).
+let editingCardId = null;
 
 function clearPendingAudioPreview() {
   if (pendingAudioUrl) URL.revokeObjectURL(pendingAudioUrl);
@@ -1975,6 +2027,9 @@ function clearPendingAudioPreview() {
 }
 
 async function openWordModal(word, context, audioBlob) {
+  editingCardId = null;
+  $("wordModalTitle").textContent = "Add flashcard";
+  $("saveWordBtn").textContent = "Save flashcard";
   $("wordInput").value = word;
   $("wordContextInput").value = context;
   $("wordTranslationInput").value = "";
@@ -2003,7 +2058,40 @@ async function openWordModal(word, context, audioBlob) {
   }
 }
 
+// Opens the same modal pre-filled with an existing card's data so the user
+// can edit it in place — triggered by tapping a flashcard in the list.
+// No re-translation happens here (the card already has a translation); the
+// clip (if any) is loaded read-only for reference and is left untouched
+// unless the card had no audio and the save path below attaches something.
+async function openEditCardModal(card) {
+  editingCardId = card.id;
+  $("wordModalTitle").textContent = "Edit flashcard";
+  $("saveWordBtn").textContent = "Save changes";
+  $("wordInput").value = card.word;
+  $("wordTranslationInput").value = card.translation;
+  $("wordTranslationInput").placeholder = "";
+  $("wordPronunciationInput").value = card.pronunciation || "";
+  $("wordContextInput").value = card.context || "";
+  $("saveWordBtn").disabled = false;
+  clearPendingAudioPreview();
+  $("wordModal").classList.remove("hidden");
+
+  if (card.hasAudio) {
+    try {
+      const blob = await loadAudioClip(card.id);
+      if (blob) {
+        pendingAudioUrl = URL.createObjectURL(blob);
+        $("wordAudioPreview").src = pendingAudioUrl;
+        $("wordAudioField").classList.remove("hidden");
+      }
+    } catch (err) {
+      console.error("[VoiceCoach] loadAudioClip failed:", err);
+    }
+  }
+}
+
 $("cancelWordBtn").addEventListener("click", () => {
+  editingCardId = null;
   clearPendingAudioPreview();
   $("wordModal").classList.add("hidden");
 });
@@ -2015,12 +2103,32 @@ $("saveWordBtn").addEventListener("click", async () => {
     alert("Both the word and translation are required.");
     return;
   }
+  const pronunciation = $("wordPronunciationInput").value.trim();
+  const context = $("wordContextInput").value.trim();
+
+  if (editingCardId) {
+    const cards = loadFlashcards();
+    const card = cards.find((c) => c.id === editingCardId);
+    if (card) {
+      card.word = word;
+      card.translation = translation;
+      card.pronunciation = pronunciation;
+      card.context = context;
+      saveFlashcards(cards);
+      renderFlashcardsScreen();
+    }
+    editingCardId = null;
+    clearPendingAudioPreview();
+    $("wordModal").classList.add("hidden");
+    return;
+  }
+
   const card = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     word,
     translation,
-    pronunciation: $("wordPronunciationInput").value.trim(),
-    context: $("wordContextInput").value.trim(),
+    pronunciation,
+    context,
     lang: currentSessionLanguage,
     createdAt: Date.now(),
     ease: 2.5,
@@ -2066,7 +2174,6 @@ function renderFlashcardsScreen() {
   const cards = loadFlashcards();
   const due = dueCount(cards);
   $("fcSummary").textContent = `${due} due today · ${cards.length} total`;
-  $("startReviewBtn").disabled = due === 0;
   updateDueBadge();
 
   const listEl = $("fcList");
@@ -2093,18 +2200,21 @@ function renderFlashcardsScreen() {
       const folder = document.createElement("div");
       folder.className = `fc-folder${collapsedFolders.has(lang) ? " collapsed" : ""}`;
 
-      const header = document.createElement("button");
-      header.type = "button";
+      const header = document.createElement("div");
       header.className = "fc-folder-header";
       header.innerHTML = `
-        <svg class="fc-folder-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-        <span class="fc-folder-name">${escapeHtml(languageName(lang))}</span>
-        <span class="fc-folder-count">${langDue ? `${langDue} due · ` : ""}${langCards.length}</span>
+        <button type="button" class="fc-folder-toggle">
+          <svg class="fc-folder-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+          <span class="fc-folder-name">${escapeHtml(languageName(lang))}</span>
+          <span class="fc-folder-count">${langDue ? `${langDue} due · ` : ""}${langCards.length}</span>
+        </button>
+        <button type="button" class="fc-folder-review-btn" data-lang="${lang}" ${langDue === 0 ? "disabled" : ""}>Review</button>
       `;
-      header.addEventListener("click", () => {
+      header.querySelector(".fc-folder-toggle").addEventListener("click", () => {
         if (collapsedFolders.has(lang)) collapsedFolders.delete(lang); else collapsedFolders.add(lang);
         folder.classList.toggle("collapsed");
       });
+      header.querySelector(".fc-folder-review-btn").addEventListener("click", () => openReviewSession(lang));
       folder.appendChild(header);
 
       const rows = document.createElement("div");
@@ -2112,6 +2222,7 @@ function renderFlashcardsScreen() {
       langCards.forEach((card) => {
         const row = document.createElement("div");
         row.className = "fc-row";
+        row.dataset.id = card.id;
         const isDue = card.due <= today;
         row.innerHTML = `
           <div class="fc-row-main">
@@ -2156,16 +2267,24 @@ $("fcList").addEventListener("click", (e) => {
   const playBtn = e.target.closest(".fc-play");
   if (playBtn) {
     playCardAudio(playBtn.dataset.id);
+    return;
+  }
+  const row = e.target.closest(".fc-row");
+  if (row) {
+    const card = loadFlashcards().find((c) => c.id === row.dataset.id);
+    if (card) openEditCardModal(card);
   }
 });
 
 let reviewQueue = [];
 let reviewIndex = 0;
 
-function openReviewSession() {
+// lang is required so mixed-language reviews never happen by accident —
+// each language folder gets its own Review button (see renderFlashcardsScreen).
+function openReviewSession(lang) {
   const today = todayStr(0);
   reviewQueue = loadFlashcards()
-    .filter((c) => c.due <= today)
+    .filter((c) => c.due <= today && (c.lang || "en") === lang)
     .sort((a, b) => a.due.localeCompare(b.due) || a.createdAt - b.createdAt);
   if (!reviewQueue.length) return;
   reviewIndex = 0;
@@ -2224,8 +2343,6 @@ $("closeReviewBtn").addEventListener("click", () => {
   $("reviewModal").classList.add("hidden");
   renderFlashcardsScreen();
 });
-
-$("startReviewBtn").addEventListener("click", openReviewSession);
 
 /* ---------------------------------------------------------------------- */
 /* UI wiring                                                              */
