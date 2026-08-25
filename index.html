@@ -625,6 +625,12 @@
         <option value="id">Indonesian</option>
         <option value="en" selected>English</option>
         <option value="es">Spanish</option>
+        <option value="fr">French</option>
+        <option value="rw">Kinyarwanda</option>
+        <option value="no">Norwegian</option>
+        <option value="ru">Russian</option>
+        <option value="ta">Tamil</option>
+        <option value="ur">Urdu</option>
         <option value="zh">Chinese</option>
       </select>
       <div class="hint" style="margin-top:6px;">The coach will speak and understand only this language.</div>
@@ -795,6 +801,7 @@
       <label>Audio clip</label>
       <audio id="wordAudioPreview" controls style="width:100%; height:36px;"></audio>
     </div>
+    <div class="hint hidden" id="wordAudioStatus" aria-live="polite"></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="cancelWordBtn">Cancel</button>
       <button class="btn btn-primary" id="saveWordBtn" style="flex:1;">Save flashcard</button>
@@ -845,6 +852,12 @@
         <option value="id">Indonesian</option>
         <option value="en">English</option>
         <option value="es">Spanish</option>
+        <option value="fr">French</option>
+        <option value="rw">Kinyarwanda</option>
+        <option value="no">Norwegian</option>
+        <option value="ru">Russian</option>
+        <option value="ta">Tamil</option>
+        <option value="ur">Urdu</option>
         <option value="zh">Chinese</option>
       </select>
     </div>
@@ -958,6 +971,12 @@ const LANGUAGES = [
   { code: "id", name: "Indonesian" },
   { code: "en", name: "English" },
   { code: "es", name: "Spanish" },
+  { code: "fr", name: "French" },
+  { code: "rw", name: "Kinyarwanda" },
+  { code: "no", name: "Norwegian" },
+  { code: "ru", name: "Russian" },
+  { code: "ta", name: "Tamil" },
+  { code: "ur", name: "Urdu" },
   { code: "zh", name: "Chinese" },
 ];
 
@@ -998,12 +1017,15 @@ function buildInstructions(settings) {
 
 // Languages whose script isn't easily sounded out by a Latin-alphabet
 // reader — worth a romanized pronunciation guide on the flashcard.
-const NEEDS_PRONUNCIATION = ["ja", "zh", "ko"];
+const NEEDS_PRONUNCIATION = ["ja", "zh", "ko", "ru", "ta", "ur"];
 
 function pronunciationSystemForLanguage(langCode) {
   if (langCode === "zh") return "Hanyu Pinyin with tone marks";
   if (langCode === "ja") return "romaji";
   if (langCode === "ko") return "revised romanization";
+  if (langCode === "ru") return "standard Latin transliteration";
+  if (langCode === "ta") return "ISO 15919 Latin transliteration";
+  if (langCode === "ur") return "clear Latin transliteration";
   return "";
 }
 
@@ -1284,6 +1306,7 @@ let userBubbleEl = null;       // in-progress "you" bubble, or null between turn
 let assistantBubbleEl = null;  // in-progress "coach" bubble, or null between turns
 let transcriptHistory = [];    // [{role, text}] finalized lines, source for the word-picker after End Session
 let currentSessionLanguage = "en";
+let transcriptTurnSequence = 0;
 
 function clearTranscript() {
   userBubbleEl = null;
@@ -1304,6 +1327,7 @@ function bubbleFor(role) {
   if (empty) empty.remove();
   bubble = document.createElement("div");
   bubble.className = `bubble ${role}`;
+  bubble._turnId = `turn-${Date.now()}-${++transcriptTurnSequence}`;
   $("transcript").appendChild(bubble);
   if (role === "user") userBubbleEl = bubble; else assistantBubbleEl = bubble;
   return bubble;
@@ -1317,6 +1341,7 @@ function appendTranscriptDelta(role, delta) {
 
 function setTranscriptFinal(role, text) {
   let bubble = role === "user" ? userBubbleEl : assistantBubbleEl;
+  let entry = null;
   if (text) {
     if (!bubble) bubble = bubbleFor(role);
     bubble.textContent = text;
@@ -1324,7 +1349,19 @@ function setTranscriptFinal(role, text) {
   if (bubble) {
     const finalText = bubble.textContent.trim();
     if (finalText) {
-      transcriptHistory.push({ role, text: finalText, audioBlob: bubble._audioBlob || null });
+      entry = {
+        id: bubble._turnId,
+        role,
+        text: finalText,
+        lang: currentSessionLanguage,
+        audioBlob: bubble._audioBlob || null,
+        audioAlignment: null,
+        audioAlignmentPromise: null,
+        decodedAudioPromise: null,
+        audioClipCache: new Map(),
+        _audioWaiters: [],
+      };
+      transcriptHistory.push(entry);
     } else {
       // Reserved slot (see input_audio_buffer.speech_started) that never got
       // any transcript text — drop the empty bubble instead of leaving a gap.
@@ -1336,6 +1373,7 @@ function setTranscriptFinal(role, text) {
   }
   if (role === "user") userBubbleEl = null; else assistantBubbleEl = null;
   transcriptScrollToBottom();
+  return entry;
 }
 
 // Attaches a captured audio clip to a turn. Audio can arrive either before
@@ -1344,15 +1382,21 @@ function setTranscriptFinal(role, text) {
 // blob on it for setTranscriptFinal() to pick up; if it already finalized,
 // find the most recent transcriptHistory entry for that role and attach it
 // there directly.
-function attachAudio(role, blob) {
+function attachAudio(role, blob, turnId = null) {
   const bubble = role === "user" ? userBubbleEl : assistantBubbleEl;
-  if (bubble) {
+  if (bubble && (!turnId || bubble._turnId === turnId)) {
     bubble._audioBlob = blob;
     return;
   }
   for (let i = transcriptHistory.length - 1; i >= 0; i--) {
-    if (transcriptHistory[i].role === role) {
-      transcriptHistory[i].audioBlob = blob;
+    const entry = transcriptHistory[i];
+    if ((turnId && entry.id === turnId) || (!turnId && entry.role === role)) {
+      entry.audioBlob = blob;
+      entry.audioAlignment = null;
+      entry.audioAlignmentPromise = null;
+      entry.decodedAudioPromise = null;
+      entry.audioClipCache = new Map();
+      (entry._audioWaiters || []).splice(0).forEach((resolve) => resolve(blob));
       return;
     }
   }
@@ -1367,20 +1411,17 @@ let dc = null;              // data channel for realtime events (realtime mode)
 let localStream = null;     // mic MediaStream (both modes)
 let currentMode = MODE_ECONOMY;
 let mediaRecorder = null;   // MediaRecorder (economy mode)
-let recordedChunks = [];    // audio chunks for the in-progress recording (economy mode)
 let economyMessages = [];   // chat history sent to /v1/chat/completions (economy mode)
 
 // Local recording of the user's own mic, purely for flashcard playback —
 // realtime mode ships audio straight to OpenAI over the RTC track, so
 // without this we'd have no clip of what the user actually said.
 let localRecorder = null;
-let localRecorderChunks = [];
 
 // Realtime mode's assistant audio only exists as a live WebRTC media track
 // (WebRTC transport doesn't send audio as data-channel events); we record
 // straight off that track to get a clip.
 let assistantRecorder = null;
-let assistantRecorderChunks = [];
 // The raw remote MediaStream from pc.ontrack, kept around so
 // startAssistantCapture() can record it directly. Deliberately NOT using
 // audioEl.captureStream() here — that API has no Safari/iOS support at all,
@@ -1388,16 +1429,26 @@ let assistantRecorderChunks = [];
 // the RTCPeerConnection's own track works everywhere MediaRecorder does.
 let remoteStream = null;
 
+function recordingOptions() {
+  if (!window.MediaRecorder) return {};
+  const preferredTypes = [
+    "audio/webm;codecs=opus",
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/webm",
+    "audio/mp4",
+  ];
+  const mimeType = preferredTypes.find((type) => MediaRecorder.isTypeSupported(type));
+  return mimeType ? { mimeType } : {};
+}
+
 function startLocalRecording() {
   if (!localStream) return;
   try {
-    localRecorderChunks = [];
-    const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))
-      ? "audio/webm;codecs=opus"
-      : "audio/webm";
-    localRecorder = new MediaRecorder(localStream, { mimeType });
+    localRecorder = new MediaRecorder(localStream, recordingOptions());
+    localRecorder._chunks = [];
+    localRecorder._turnId = bubbleFor("user")._turnId;
     localRecorder.addEventListener("dataavailable", (e) => {
-      if (e.data && e.data.size) localRecorderChunks.push(e.data);
+      if (e.data && e.data.size) e.currentTarget._chunks.push(e.data);
     });
     localRecorder.start();
   } catch (e) {
@@ -1413,8 +1464,8 @@ function stopLocalRecording(role) {
   const stopped = new Promise((resolve) => recorder.addEventListener("stop", resolve, { once: true }));
   recorder.stop();
   stopped.then(() => {
-    const blob = new Blob(localRecorderChunks, { type: recorder.mimeType || "audio/webm" });
-    if (blob.size) attachAudio(role, blob);
+    const blob = new Blob(recorder._chunks || [], { type: recorder.mimeType || "audio/webm" });
+    if (blob.size) attachAudio(role, blob, recorder._turnId);
   });
 }
 
@@ -1422,13 +1473,11 @@ function startAssistantCapture() {
   if (assistantRecorder) return; // already capturing this response
   if (!remoteStream) return; // track hasn't arrived yet — nothing to record
   try {
-    assistantRecorderChunks = [];
-    const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))
-      ? "audio/webm;codecs=opus"
-      : "audio/webm";
-    assistantRecorder = new MediaRecorder(remoteStream, { mimeType });
+    assistantRecorder = new MediaRecorder(remoteStream, recordingOptions());
+    assistantRecorder._chunks = [];
+    assistantRecorder._turnId = bubbleFor("assistant")._turnId;
     assistantRecorder.addEventListener("dataavailable", (e) => {
-      if (e.data && e.data.size) assistantRecorderChunks.push(e.data);
+      if (e.data && e.data.size) e.currentTarget._chunks.push(e.data);
     });
     assistantRecorder.start();
   } catch (e) {
@@ -1444,8 +1493,8 @@ function stopAssistantCapture() {
   const stopped = new Promise((resolve) => recorder.addEventListener("stop", resolve, { once: true }));
   recorder.stop();
   stopped.then(() => {
-    const blob = new Blob(assistantRecorderChunks, { type: recorder.mimeType || "audio/webm" });
-    if (blob.size) attachAudio("assistant", blob);
+    const blob = new Blob(recorder._chunks || [], { type: recorder.mimeType || "audio/webm" });
+    if (blob.size) attachAudio("assistant", blob, recorder._turnId);
   });
 }
 
@@ -1669,13 +1718,11 @@ async function startEconomySession(settings) {
 function economyBeginRecording() {
   if (!localStream) return;
   bubbleFor("user"); // reserve the DOM slot now, before transcription resolves
-  recordedChunks = [];
-  const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))
-    ? "audio/webm;codecs=opus"
-    : "audio/webm";
-  mediaRecorder = new MediaRecorder(localStream, { mimeType });
+  mediaRecorder = new MediaRecorder(localStream, recordingOptions());
+  mediaRecorder._chunks = [];
+  mediaRecorder._turnId = userBubbleEl._turnId;
   mediaRecorder.addEventListener("dataavailable", (e) => {
-    if (e.data && e.data.size) recordedChunks.push(e.data);
+    if (e.data && e.data.size) e.currentTarget._chunks.push(e.data);
   });
   mediaRecorder.start();
   setState("user_speaking");
@@ -1689,7 +1736,7 @@ function economyStopRecording() {
     recorder.addEventListener("stop", resolve, { once: true });
   });
   recorder.stop();
-  stopped.then(() => processEconomyTurn(recorder.mimeType));
+  stopped.then(() => processEconomyTurn(recorder._chunks || [], recorder.mimeType, recorder._turnId));
 }
 
 function economyInterruptAndRecord() {
@@ -1697,15 +1744,15 @@ function economyInterruptAndRecord() {
   economyBeginRecording();
 }
 
-async function processEconomyTurn(mimeType) {
+async function processEconomyTurn(chunks, mimeType, turnId) {
   try {
-    const blob = new Blob(recordedChunks, { type: mimeType || "audio/webm" });
+    const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
     if (!blob.size) {
       setTranscriptFinal("user"); // drop the reserved empty bubble
       setState("ready");
       return;
     }
-    attachAudio("user", blob);
+    attachAudio("user", blob, turnId);
     const settings = loadSettings();
 
     const userText = await economyTranscribe(blob, settings);
@@ -1718,11 +1765,11 @@ async function processEconomyTurn(mimeType) {
 
     const replyText = await economyChat(settings);
     economyMessages.push({ role: "assistant", content: replyText });
-    setTranscriptFinal("assistant", replyText);
+    const assistantEntry = setTranscriptFinal("assistant", replyText);
 
     setState("assistant_speaking");
     const speech = await economySpeak(replyText, settings);
-    attachAudio("assistant", speech.blob);
+    attachAudio("assistant", speech.blob, assistantEntry?.id || null);
     await playEconomyAudio(speech.url);
 
     if (currentState === "assistant_speaking") setState("ready");
@@ -1829,8 +1876,8 @@ function endSession(silent) {
   try { dc && dc.close(); } catch (e) {}
   try { pc && pc.close(); } catch (e) {}
   try { mediaRecorder && mediaRecorder.state !== "inactive" && mediaRecorder.stop(); } catch (e) {}
-  try { localRecorder && localRecorder.state !== "inactive" && localRecorder.stop(); } catch (e) {}
-  try { assistantRecorder && assistantRecorder.state !== "inactive" && assistantRecorder.stop(); } catch (e) {}
+  try { stopLocalRecording("user"); } catch (e) {}
+  try { stopAssistantCapture(); } catch (e) {}
   try { $("remoteAudio").pause(); } catch (e) {}
   try {
     if (localStream) localStream.getTracks().forEach((t) => t.stop());
@@ -1978,6 +2025,247 @@ async function openTranscriptReview() {
   }
 }
 
+function audioSelectionKey(selection) {
+  return `${selection.start}:${selection.end}`;
+}
+
+function normalizedAudioText(text) {
+  return String(text || "")
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function waitForTurnAudio(entry, timeoutMs = 2500) {
+  if (entry.audioBlob) return Promise.resolve(entry.audioBlob);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (blob = null) => {
+      if (settled) return;
+      settled = true;
+      resolve(blob);
+    };
+    if (!entry._audioWaiters) entry._audioWaiters = [];
+    entry._audioWaiters.push(finish);
+    setTimeout(finish, timeoutMs);
+  });
+}
+
+function audioFilenameExtension(mimeType) {
+  const type = String(mimeType || "").toLowerCase();
+  if (type.includes("mpeg") || type.includes("mp3")) return "mp3";
+  if (type.includes("mp4") || type.includes("m4a")) return "mp4";
+  if (type.includes("ogg")) return "ogg";
+  if (type.includes("wav")) return "wav";
+  return "webm";
+}
+
+async function requestTurnWordTimestamps(entry) {
+  if (entry.audioAlignment) return entry.audioAlignment;
+  if (entry.audioAlignmentPromise) return entry.audioAlignmentPromise;
+  if (!entry.audioBlob) throw new Error("No conversation audio was recorded for this turn.");
+
+  entry.audioAlignmentPromise = (async () => {
+    const settings = loadSettings();
+    const form = new FormData();
+    const extension = audioFilenameExtension(entry.audioBlob.type);
+    form.append("file", entry.audioBlob, `conversation-turn.${extension}`);
+    form.append("model", "whisper-1");
+    form.append("language", entry.lang || currentSessionLanguage);
+    form.append("response_format", "verbose_json");
+    form.append("timestamp_granularities[]", "word");
+    form.append("prompt", entry.text);
+
+    const resp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${settings.apiKey}` },
+      body: form,
+    });
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => "");
+      throw new Error(`Audio alignment failed (${resp.status}). ${detail.slice(0, 160)}`);
+    }
+    const data = await resp.json();
+    const words = (Array.isArray(data.words) ? data.words : [])
+      .filter((item) => Number.isFinite(item?.start) && Number.isFinite(item?.end) && item.end > item.start)
+      .map((item) => ({ word: String(item.word || ""), start: item.start, end: item.end }));
+    if (!words.length) throw new Error("The transcription did not return word timestamps.");
+    entry.audioAlignment = words;
+    return words;
+  })().catch((err) => {
+    entry.audioAlignmentPromise = null;
+    throw err;
+  });
+
+  return entry.audioAlignmentPromise;
+}
+
+async function decodeTurnAudio(entry) {
+  if (entry.decodedAudioPromise) return entry.decodedAudioPromise;
+  entry.decodedAudioPromise = (async () => {
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) throw new Error("This browser cannot decode recorded audio.");
+    const context = new AudioContextCtor();
+    try {
+      return await context.decodeAudioData(await entry.audioBlob.arrayBuffer());
+    } finally {
+      context.close().catch(() => {});
+    }
+  })().catch((err) => {
+    entry.decodedAudioPromise = null;
+    throw err;
+  });
+  return entry.decodedAudioPromise;
+}
+
+function findTimestampRange(words, selectedText, approximatePosition) {
+  const target = normalizedAudioText(selectedText);
+  if (!target) return null;
+  const usable = words
+    .map((item) => ({ ...item, normalized: normalizedAudioText(item.word) }))
+    .filter((item) => item.normalized);
+  const candidates = [];
+
+  for (let startIndex = 0; startIndex < usable.length; startIndex++) {
+    let combined = "";
+    for (let endIndex = startIndex; endIndex < usable.length; endIndex++) {
+      combined += usable[endIndex].normalized;
+      if (combined === target) {
+        candidates.push({
+          start: usable[startIndex].start,
+          end: usable[endIndex].end,
+          position: startIndex / Math.max(1, usable.length - 1),
+        });
+        break;
+      }
+      if (combined.length >= target.length) break;
+    }
+  }
+
+  if (!candidates.length) return null;
+  return candidates.sort((a, b) =>
+    Math.abs(a.position - approximatePosition) - Math.abs(b.position - approximatePosition)
+  )[0];
+}
+
+function writeAscii(view, offset, text) {
+  for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
+}
+
+function audioBufferRangeToWav(buffer, startSeconds, endSeconds) {
+  const startFrame = Math.max(0, Math.floor(startSeconds * buffer.sampleRate));
+  const endFrame = Math.min(buffer.length, Math.ceil(endSeconds * buffer.sampleRate));
+  const frameCount = Math.max(1, endFrame - startFrame);
+  const channelCount = buffer.numberOfChannels;
+  const bytesPerSample = 2;
+  const dataLength = frameCount * channelCount * bytesPerSample;
+  const wav = new ArrayBuffer(44 + dataLength);
+  const view = new DataView(wav);
+
+  writeAscii(view, 0, "RIFF");
+  view.setUint32(4, 36 + dataLength, true);
+  writeAscii(view, 8, "WAVE");
+  writeAscii(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channelCount, true);
+  view.setUint32(24, buffer.sampleRate, true);
+  view.setUint32(28, buffer.sampleRate * channelCount * bytesPerSample, true);
+  view.setUint16(32, channelCount * bytesPerSample, true);
+  view.setUint16(34, 16, true);
+  writeAscii(view, 36, "data");
+  view.setUint32(40, dataLength, true);
+
+  const channels = Array.from({ length: channelCount }, (_, i) => buffer.getChannelData(i));
+  let offset = 44;
+  for (let frame = startFrame; frame < endFrame; frame++) {
+    for (let channel = 0; channel < channelCount; channel++) {
+      const sample = Math.max(-1, Math.min(1, channels[channel][frame] || 0));
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+      offset += bytesPerSample;
+    }
+  }
+  return new Blob([wav], { type: "audio/wav" });
+}
+
+async function createConversationWordClip(entry, selection) {
+  if (!entry.audioClipCache) entry.audioClipCache = new Map();
+  const key = audioSelectionKey(selection);
+  if (entry.audioClipCache.has(key)) return entry.audioClipCache.get(key);
+
+  const clipPromise = (async () => {
+    const [words, decoded] = await Promise.all([
+      requestTurnWordTimestamps(entry),
+      decodeTurnAudio(entry),
+    ]);
+    const approximatePosition = selection.start / Math.max(1, entry.text.length);
+    const range = findTimestampRange(words, selection.text, approximatePosition);
+    if (!range) throw new Error("The selected text could not be matched to the recorded speech.");
+    return audioBufferRangeToWav(
+      decoded,
+      Math.max(0, range.start - 0.08),
+      Math.min(decoded.duration, range.end + 0.12)
+    );
+  })();
+
+  entry.audioClipCache.set(key, clipPromise);
+  try {
+    const blob = await clipPromise;
+    entry.audioClipCache.set(key, blob);
+    return blob;
+  } catch (err) {
+    entry.audioClipCache.delete(key);
+    throw err;
+  }
+}
+
+function selectionsForParts(parts) {
+  let offset = 0;
+  return parts.map((text) => {
+    const selection = { text: cleanWord(text), rawText: text, start: offset, end: offset + text.length };
+    offset += text.length;
+    return selection;
+  }).filter((selection) => selection.text);
+}
+
+function prepareRemainingTurnAudio(entry, lineIndex, selectedKey) {
+  if (entry._backgroundAudioScheduled || !entry.audioBlob) return;
+  entry._backgroundAudioScheduled = true;
+  const parts = segmentCache[lineIndex]?.words || naiveSegments(entry.text, entry.lang).words;
+  const queue = selectionsForParts(parts).filter((selection) => audioSelectionKey(selection) !== selectedKey);
+  const runNext = () => {
+    const selection = queue.shift();
+    if (!selection) return;
+    createConversationWordClip(entry, selection)
+      .catch(() => {})
+      .finally(() => {
+        if (typeof requestIdleCallback === "function") requestIdleCallback(runNext, { timeout: 1000 });
+        else setTimeout(runNext, 20);
+      });
+  };
+  if (typeof requestIdleCallback === "function") requestIdleCallback(runNext, { timeout: 1000 });
+  else setTimeout(runNext, 20);
+}
+
+async function synthesizeSelectedWord(word) {
+  const settings = loadSettings();
+  const resp = await fetch("https://api.openai.com/v1/audio/speech", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${settings.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini-tts",
+      voice: settings.economyVoice || "alloy",
+      input: word,
+      instructions: `Pronounce this ${languageName(currentSessionLanguage)} word or phrase clearly once, with no added words.`,
+    }),
+  });
+  if (!resp.ok) throw new Error(`Word speech synthesis failed (${resp.status}).`);
+  return resp.blob();
+}
+
 function renderTranscriptReviewBody() {
   const body = $("trBody");
   body.innerHTML = "";
@@ -1986,6 +2274,7 @@ function renderTranscriptReviewBody() {
     bubble.className = `bubble ${entry.role}`;
     const parts = (segmentCache[i] && segmentCache[i][segmentMode]) || [entry.text];
     let seg = 0;
+    let charOffset = 0;
     parts.forEach((part) => {
       const clean = cleanWord(part);
       const span = document.createElement("span");
@@ -1995,11 +2284,14 @@ function renderTranscriptReviewBody() {
         span.dataset.word = clean;
         span.dataset.context = entry.text;
         span.dataset.lineIndex = String(i);
+        span.dataset.start = String(charOffset);
+        span.dataset.end = String(charOffset + part.length);
         seg += 1;
       } else {
         span.className = "word no-select";
       }
       bubble.appendChild(span);
+      charOffset += part.length;
     });
     body.appendChild(bubble);
   });
@@ -2013,8 +2305,12 @@ $("trBody").addEventListener("click", (e) => {
   const span = e.target.closest(".word");
   if (!span || span.classList.contains("no-select")) return;
   const lineIndex = Number(span.dataset.lineIndex);
-  const audioBlob = transcriptHistory[lineIndex]?.audioBlob || null;
-  openWordModal(span.dataset.word, span.dataset.context, audioBlob);
+  openWordModal(span.dataset.word, span.dataset.context, {
+    lineIndex,
+    start: Number(span.dataset.start),
+    end: Number(span.dataset.end),
+    text: span.dataset.word,
+  });
 });
 
 $("segToggle").addEventListener("click", (e) => {
@@ -2035,6 +2331,7 @@ $("closeTranscriptReviewBtn").addEventListener("click", () => {
 // persist it on save (new cards only) and revoke it on close either way.
 let pendingAudioBlob = null;
 let pendingAudioUrl = null;
+let wordAudioGeneration = 0;
 
 // Set to an existing card's id while the modal is editing that card rather
 // than creating a new one from a transcript word (see openEditCardModal).
@@ -2046,9 +2343,63 @@ function clearPendingAudioPreview() {
   pendingAudioBlob = null;
   $("wordAudioPreview").src = "";
   $("wordAudioField").classList.add("hidden");
+  $("wordAudioStatus").textContent = "";
+  $("wordAudioStatus").classList.add("hidden");
 }
 
-async function openWordModal(word, context, audioBlob) {
+function showWordAudioStatus(message) {
+  $("wordAudioStatus").textContent = message;
+  $("wordAudioStatus").classList.toggle("hidden", !message);
+}
+
+function setPendingAudioPreview(blob) {
+  if (pendingAudioUrl) URL.revokeObjectURL(pendingAudioUrl);
+  pendingAudioBlob = blob;
+  pendingAudioUrl = URL.createObjectURL(blob);
+  $("wordAudioPreview").src = pendingAudioUrl;
+  $("wordAudioField").classList.remove("hidden");
+}
+
+async function prepareSelectedWordAudio(word, selection, generation) {
+  const entry = Number.isInteger(selection?.lineIndex)
+    ? transcriptHistory[selection.lineIndex]
+    : null;
+  if (entry && !entry.audioBlob) {
+    showWordAudioStatus("Finishing the conversation recording…");
+    await waitForTurnAudio(entry);
+  }
+  if (entry?.audioBlob) {
+    try {
+      showWordAudioStatus("Finding this word in the conversation audio…");
+      const blob = await createConversationWordClip(entry, selection);
+      if (generation !== wordAudioGeneration) return;
+      setPendingAudioPreview(blob);
+      showWordAudioStatus("Clipped from the original conversation audio.");
+      prepareRemainingTurnAudio(entry, selection.lineIndex, audioSelectionKey(selection));
+      return;
+    } catch (err) {
+      console.warn("[VoiceCoach] original word audio unavailable; using TTS:", err);
+    }
+  }
+
+  if (generation !== wordAudioGeneration) return;
+  showWordAudioStatus("Generating a clear pronunciation for this word…");
+  try {
+    const blob = await synthesizeSelectedWord(word);
+    if (generation !== wordAudioGeneration) return;
+    setPendingAudioPreview(blob);
+    showWordAudioStatus(entry?.audioBlob
+      ? "Could not align the original recording, so this uses generated pronunciation."
+      : "No conversation recording was available, so this uses generated pronunciation.");
+  } catch (err) {
+    if (generation !== wordAudioGeneration) return;
+    console.error("[VoiceCoach] word audio preparation failed:", err);
+    showWordAudioStatus("Audio could not be prepared. You can still save the flashcard.");
+  }
+}
+
+async function openWordModal(word, context, selection) {
+  const generation = ++wordAudioGeneration;
   editingCardId = null;
   $("wordModalTitle").textContent = "Add flashcard";
   $("saveWordBtn").textContent = "Save flashcard";
@@ -2061,23 +2412,20 @@ async function openWordModal(word, context, audioBlob) {
   $("wordModal").classList.remove("hidden");
 
   clearPendingAudioPreview();
-  if (audioBlob) {
-    pendingAudioBlob = audioBlob;
-    pendingAudioUrl = URL.createObjectURL(audioBlob);
-    $("wordAudioPreview").src = pendingAudioUrl;
-    $("wordAudioField").classList.remove("hidden");
-  }
-
-  try {
-    const result = await translateWord(word, context, currentSessionLanguage);
-    $("wordTranslationInput").value = result.translation;
-    $("wordPronunciationInput").value = result.pronunciation;
-  } catch (err) {
-    console.error("[VoiceCoach] translateWord failed:", err);
-    $("wordTranslationInput").placeholder = "Couldn't auto-translate — type it manually";
-  } finally {
-    $("saveWordBtn").disabled = false;
-  }
+  const translationPromise = translateWord(word, context, currentSessionLanguage)
+    .then((result) => {
+      if (generation !== wordAudioGeneration) return;
+      $("wordTranslationInput").value = result.translation;
+      $("wordPronunciationInput").value = result.pronunciation;
+    })
+    .catch((err) => {
+      if (generation !== wordAudioGeneration) return;
+      console.error("[VoiceCoach] translateWord failed:", err);
+      $("wordTranslationInput").placeholder = "Couldn't auto-translate — type it manually";
+    });
+  const audioPromise = prepareSelectedWordAudio(word, selection, generation);
+  await Promise.allSettled([translationPromise, audioPromise]);
+  if (generation === wordAudioGeneration) $("saveWordBtn").disabled = false;
 }
 
 // Opens the same modal pre-filled with an existing card's data so the user
@@ -2086,6 +2434,7 @@ async function openWordModal(word, context, audioBlob) {
 // clip (if any) is loaded read-only for reference and is left untouched
 // unless the card had no audio and the save path below attaches something.
 async function openEditCardModal(card) {
+  wordAudioGeneration += 1;
   editingCardId = card.id;
   $("wordModalTitle").textContent = "Edit flashcard";
   $("saveWordBtn").textContent = "Save changes";
@@ -2113,6 +2462,7 @@ async function openEditCardModal(card) {
 }
 
 $("cancelWordBtn").addEventListener("click", () => {
+  wordAudioGeneration += 1;
   editingCardId = null;
   clearPendingAudioPreview();
   $("wordModal").classList.add("hidden");
