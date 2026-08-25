@@ -19,8 +19,14 @@
     --border:#2e2e30;
   }
   *{box-sizing:border-box;}
-  html,body{height:100%;}
+  html,body{
+    height:100%;
+    overflow:hidden;
+    overscroll-behavior:none;
+  }
   body{
+    position:fixed;
+    inset:0;
     margin:0;
     background:radial-gradient(circle at 50% 20%, #1a1a1a 0%, var(--bg) 60%);
     color:var(--fg);
@@ -28,12 +34,11 @@
     display:flex;
     align-items:center;
     justify-content:center;
-    overflow:hidden;
   }
   .app{
     width:100%;
     max-width:480px;
-    height:100dvh;
+    height:100%;
     display:flex;
     flex-direction:column;
     position:relative;
@@ -43,6 +48,7 @@
     flex:1;
     min-height:0;
     overflow-y:auto;
+    overscroll-behavior:contain;
     padding:24px;
     display:flex;
     flex-direction:column;
@@ -151,15 +157,30 @@
   .field{ margin-bottom:2px; }
   .row{ display:flex; gap:10px; }
   .row > *{ flex:1; }
-  input[type="range"]{
-    width:100%;
-    accent-color:var(--accent);
-    cursor:pointer;
-    padding:0;
+  label .field-value{ color:var(--fg); text-transform:none; letter-spacing:normal; }
+
+  /* ---------- reusable two-option pill toggle ---------- */
+  .pill-toggle{
+    display:flex;
+    gap:4px;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:3px;
+  }
+  .pill-toggle-btn{
+    flex:1;
     background:transparent;
     border:none;
+    color:var(--dim);
+    padding:8px;
+    border-radius:8px;
+    font-size:13px;
+    font-weight:600;
+    font-family:inherit;
+    cursor:pointer;
   }
-  label .field-value{ color:var(--fg); text-transform:none; letter-spacing:normal; }
+  .pill-toggle-btn.active{ background:var(--bg2); color:var(--fg); }
 
   .btn{
     appearance:none;
@@ -209,6 +230,7 @@
     min-height:0;
     width:100%;
     overflow-y:auto;
+    overscroll-behavior:contain;
   }
   .transcript{
     display:flex;
@@ -292,8 +314,8 @@
     background:radial-gradient(circle at 35% 30%, #4a4a4a, #131313 70%);
     animation:pulseFast 1s ease-in-out infinite;
   }
-  /* listening: calm glow, mic is "open" */
-  .app[data-state="listening"] .orb{
+  /* ready: connected, mic off, waiting for a tap-to-talk */
+  .app[data-state="ready"] .orb{
     background:radial-gradient(circle at 35% 30%, #2f2f31, #101010 70%);
     box-shadow:0 0 40px rgba(255,255,255,.15);
   }
@@ -366,7 +388,6 @@
   }
   .icon-btn svg{ width:20px; height:20px; }
   .icon-btn:hover{ border-color:var(--accent); color:var(--fg); }
-  .icon-btn.active{ background:var(--danger); color:#fff; border-color:var(--danger); }
   .icon-btn:disabled{ opacity:.4; cursor:not-allowed; }
 
   .hidden{ display:none !important; }
@@ -391,6 +412,7 @@
     gap:14px;
     max-height:85vh;
     overflow-y:auto;
+    overscroll-behavior:contain;
   }
   .modal h2{ margin:0; font-size:17px; }
   .modal-actions{ display:flex; gap:10px; margin-top:6px; }
@@ -409,6 +431,7 @@
     flex:1;
     min-height:0;
     overflow-y:auto;
+    overscroll-behavior:contain;
     display:flex;
     flex-direction:column;
     gap:8px;
@@ -433,25 +456,34 @@
   }
   .fc-delete:hover{ color:var(--danger); }
 
-  /* ---------- transcript review (word picking) ---------- */
+  /* ---------- transcript review (word/phrase picking) ---------- */
   .transcript-review-modal{ max-width:480px; }
   .tr-body{
-    max-height:50vh;
+    max-height:45vh;
     overflow-y:auto;
+    overscroll-behavior:contain;
     display:flex;
     flex-direction:column;
     gap:8px;
   }
   .tr-body .bubble{ max-width:100%; }
+  /* Each word/phrase gets its own inline-block box with a small side margin
+     so adjacent underlines stay visually separated even with zero
+     whitespace between glyphs (Japanese, Chinese) — plain text-decoration
+     on touching inline spans would otherwise merge into one solid line. */
   .word{
+    display:inline-block;
     cursor:pointer;
-    border-radius:4px;
-    padding:0 1px;
+    margin:0 1.5px 3px;
+    padding:0 1px 2px;
+    border-radius:3px;
+    border-bottom:2px solid var(--accent2);
     transition:background .1s;
   }
-  .word:hover{ background:rgba(255,255,255,.18); }
-  .word.added{ background:rgba(255,255,255,.1); text-decoration:underline; text-decoration-color:var(--accent2); }
-  .word.no-select{ cursor:default; }
+  .word.seg-b{ border-bottom-color:var(--dim); }
+  .word:hover{ background:rgba(255,255,255,.16); }
+  .word.added{ background:rgba(255,255,255,.1); border-bottom-color:var(--accent); border-bottom-width:3px; }
+  .word.no-select{ display:inline; cursor:default; border-bottom:none; margin:0; padding:0; }
   .word.no-select:hover{ background:transparent; }
 
   /* ---------- flashcard review session ---------- */
@@ -491,9 +523,8 @@
   <div class="setup" id="setupScreen">
     <h1>Voice Coach</h1>
     <p class="sub">
-      Speech-to-speech via the OpenAI Realtime API &mdash; just talk, no text
-      input required. Your key is stored only in this browser's local storage
-      and sent directly to OpenAI.
+      Talk to an AI voice coach &mdash; no text input required. Your key is
+      stored only in this browser's local storage and sent directly to OpenAI.
     </p>
 
     <div class="field">
@@ -515,12 +546,15 @@
     </div>
 
     <div class="field">
-      <label for="responseDelayInput">Response delay: <span class="field-value" id="responseDelayValue">500ms</span></label>
-      <input type="range" id="responseDelayInput" min="200" max="2000" step="100" value="500" />
-      <div class="hint" style="margin-top:6px;">How long the coach waits after you stop talking before it replies. Higher = more patient, so it won't jump in while you're still thinking.</div>
+      <label>Conversation mode</label>
+      <div class="pill-toggle" id="modeToggle">
+        <button type="button" class="pill-toggle-btn" data-mode="economy">Economy</button>
+        <button type="button" class="pill-toggle-btn" data-mode="realtime">Realtime</button>
+      </div>
+      <div class="hint" id="modeHint" style="margin-top:6px;"></div>
     </div>
 
-    <div class="field">
+    <div class="field" id="voiceField">
       <label for="voiceSelect">Voice</label>
       <select id="voiceSelect">
         <option value="marin">Marin</option>
@@ -536,12 +570,24 @@
       </select>
     </div>
 
+    <div class="field" id="economyVoiceField">
+      <label for="economyVoiceSelect">Voice</label>
+      <select id="economyVoiceSelect">
+        <option value="alloy">Alloy</option>
+        <option value="echo">Echo</option>
+        <option value="fable">Fable</option>
+        <option value="onyx">Onyx</option>
+        <option value="nova">Nova</option>
+        <option value="shimmer">Shimmer</option>
+      </select>
+    </div>
+
     <div class="field">
       <label for="instructionsInput">Personality / system instructions</label>
       <textarea id="instructionsInput" spellcheck="false">You are a warm, direct voice coach. Keep replies short and conversational — this is a spoken conversation, not an essay. Ask one focused question at a time.</textarea>
     </div>
 
-    <div class="field">
+    <div class="field" id="modelField">
       <label for="modelInput">Realtime model (advanced)</label>
       <input type="text" id="modelInput" value="gpt-realtime" spellcheck="false" />
       <div class="hint" style="margin-top:6px;">Only change this if you know you need a different Realtime model id.</div>
@@ -580,13 +626,6 @@
       <div class="status" id="statusText">Tap to start</div>
 
       <div class="controls">
-        <button class="icon-btn" id="muteBtn" disabled title="Mute microphone" aria-label="Mute microphone">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-            <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/>
-            <path d="M19 11a7 7 0 0 1-14 0"/>
-            <path d="M12 18v3"/>
-          </svg>
-        </button>
         <button class="icon-btn" id="endSessionBtn" disabled title="End session &amp; review transcript" aria-label="End session and review transcript">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
             <path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/>
@@ -630,7 +669,12 @@
 <div class="modal-backdrop hidden" id="transcriptReviewModal">
   <div class="modal transcript-review-modal">
     <h2>Add flashcards</h2>
-    <p class="hint">Tap any word in the transcript to translate it and save it as a flashcard.</p>
+    <p class="hint">Tap any underlined word or phrase to translate it and save it as a flashcard.</p>
+    <div class="pill-toggle" id="segToggle">
+      <button type="button" class="pill-toggle-btn active" data-seg="words">Words</button>
+      <button type="button" class="pill-toggle-btn" data-seg="phrases">Phrases</button>
+    </div>
+    <p class="hint" id="trAnalyzing">Analyzing transcript for word/phrase boundaries…</p>
     <div class="tr-body" id="trBody"></div>
     <div class="modal-actions">
       <button class="btn btn-primary" id="closeTranscriptReviewBtn" style="flex:1;">Done</button>
@@ -702,10 +746,14 @@
       </select>
     </div>
     <div class="field">
-      <label for="s_responseDelayInput">Response delay: <span class="field-value" id="s_responseDelayValue">500ms</span></label>
-      <input type="range" id="s_responseDelayInput" min="200" max="2000" step="100" value="500" />
+      <label>Conversation mode</label>
+      <div class="pill-toggle" id="s_modeToggle">
+        <button type="button" class="pill-toggle-btn" data-mode="economy">Economy</button>
+        <button type="button" class="pill-toggle-btn" data-mode="realtime">Realtime</button>
+      </div>
+      <div class="hint" id="s_modeHint" style="margin-top:6px;"></div>
     </div>
-    <div class="field">
+    <div class="field" id="s_voiceField">
       <label for="s_voiceSelect">Voice</label>
       <select id="s_voiceSelect">
         <option value="marin">Marin</option>
@@ -720,11 +768,22 @@
         <option value="verse">Verse</option>
       </select>
     </div>
+    <div class="field" id="s_economyVoiceField">
+      <label for="s_economyVoiceSelect">Voice</label>
+      <select id="s_economyVoiceSelect">
+        <option value="alloy">Alloy</option>
+        <option value="echo">Echo</option>
+        <option value="fable">Fable</option>
+        <option value="onyx">Onyx</option>
+        <option value="nova">Nova</option>
+        <option value="shimmer">Shimmer</option>
+      </select>
+    </div>
     <div class="field">
       <label for="s_instructionsInput">Personality / system instructions</label>
       <textarea id="s_instructionsInput" spellcheck="false"></textarea>
     </div>
-    <div class="field">
+    <div class="field" id="s_modelField">
       <label for="s_modelInput">Realtime model (advanced)</label>
       <input type="text" id="s_modelInput" spellcheck="false" />
     </div>
@@ -744,30 +803,51 @@
 "use strict";
 
 /* =========================================================================
-   VOICE COACH — single-file speech-to-speech chatbot on OpenAI's Realtime
-   API (WebRTC transport). No text input: the mic orb is the only control.
-   A live transcript of both sides of the conversation is rendered above it.
+   VOICE COACH — single-file voice chatbot, push-to-talk. No text input:
+   the mic orb is the only control. A live transcript of both sides of the
+   conversation is rendered above it.
 
-   Flow per session:
+   Two conversation modes, chosen in Settings, both driven by the same orb
+   state machine (idle -> connecting -> ready -> user_speaking -> thinking
+   -> assistant_speaking):
+
+   REALTIME mode — OpenAI's Realtime API over WebRTC:
      1. POST /v1/realtime/client_secrets (your real API key) -> ephemeral token
-     2. Open RTCPeerConnection, attach mic track, create a data channel
+     2. Open RTCPeerConnection, attach mic track (kept disabled except while
+        actively recording — push-to-talk, no server VAD), create a data channel
      3. SDP offer/answer handshake against /v1/realtime/calls (ephemeral key only)
-     4. session.update over the data channel sets voice/instructions/VAD/
-        input transcription, and locks the model to one language
-     5. Server VAD drives turn-taking + barge-in automatically; we reflect
-        server events into orb state (idle/listening/thinking/speaking) and
-        stream transcript deltas (user + assistant) into chat bubbles
+     4. On tap-to-talk: input_audio_buffer.clear, unmute the mic track.
+        On tap-to-stop: mute, input_audio_buffer.commit, response.create
+     5. Server events drive orb state + stream transcript deltas into bubbles
+
+   ECONOMY mode — plain REST calls, no realtime/WebRTC infrastructure:
+     1. MediaRecorder captures the mic while the button is toggled on
+     2. POST /v1/audio/transcriptions (whisper-1) -> user's text
+     3. POST /v1/chat/completions (gpt-4o-mini) -> the coach's reply text
+     4. POST /v1/audio/speech (tts-1) -> reply audio, played back directly
+     Slower turn-taking (sequential REST calls, no streaming) but far
+     cheaper per minute than Realtime's audio-native pricing.
 
    SECURITY: your real API key lives in localStorage and is sent directly
-   from this browser to OpenAI to mint each ephemeral session. That's fine
-   for local, single-user use. Never host this file publicly as-is — anyone
-   who loads the page can read the key out of localStorage / devtools.
+   from this browser to OpenAI for every call above. That's fine for local,
+   single-user use. Never host this file publicly as-is — anyone who loads
+   the page can read the key out of localStorage / devtools.
    ========================================================================= */
 
 const SETTINGS_KEY = "voiceCoach.settings";
 const REALTIME_CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets";
 const REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 const TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe";
+
+const MODE_REALTIME = "realtime";
+const MODE_ECONOMY = "economy";
+const ECONOMY_STT_MODEL = "whisper-1";
+const ECONOMY_CHAT_MODEL = "gpt-4o-mini";
+const ECONOMY_TTS_MODEL = "tts-1";
+const MODE_HINTS = {
+  economy: "Cheapest option: records your turn, then transcribes → thinks → speaks as separate steps. A beat slower, costs much less per conversation.",
+  realtime: "OpenAI's low-latency speech-to-speech API. Fastest, most natural turn-taking, but the priciest per minute.",
+};
 
 const LANGUAGES = [
   { code: "ko", name: "Korean" },
@@ -842,6 +922,59 @@ async function translateWord(word, context, langCode) {
   if (!resp.ok) throw new Error(`Translation request failed (${resp.status})`);
   const data = await resp.json();
   return (data?.choices?.[0]?.message?.content || "").trim();
+}
+
+// Markers the segmentation prompt inserts at boundaries — chosen to be
+// characters that essentially never appear in real conversational text.
+const WORD_DELIM = "␟";
+const PHRASE_DELIM = "␞";
+
+// Asks a cheap text model to mark word- and phrase-level boundaries in each
+// transcript line, without altering any of the original characters. This is
+// what makes per-word flashcards possible for languages with no whitespace
+// between words (Japanese, Chinese) — naive whitespace-splitting would treat
+// a whole sentence in those languages as a single "word".
+async function analyzeTranscriptSegments(lines, langCode) {
+  const settings = loadSettings();
+  const langName = languageName(langCode);
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${settings.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content:
+            `You segment ${langName} text for a language-learning flashcard app. ` +
+            `For each input line, insert the marker "${WORD_DELIM}" between every ` +
+            `individual word/token — correct linguistic word boundaries, which matters ` +
+            `most for languages with no spaces between words, like Japanese or Chinese, ` +
+            `where you must split by actual words, not by character. Also insert the ` +
+            `marker "${PHRASE_DELIM}" between every meaningful phrase chunk (roughly ` +
+            `2-6 words each, grouping related words together, e.g. a verb phrase or ` +
+            `noun phrase). Do not add, remove, translate, or reorder any characters — ` +
+            `only insert the two marker characters at boundaries. Respond with strict ` +
+            `JSON only: an array, same length and order as the input, where each ` +
+            `element is {"words": "...", "phrases": "..."}.`,
+        },
+        { role: "user", content: JSON.stringify(lines) },
+      ],
+    }),
+  });
+  if (!resp.ok) throw new Error(`Segmentation request failed (${resp.status})`);
+  const data = await resp.json();
+  const raw = data?.choices?.[0]?.message?.content || "";
+  const jsonStr = raw.slice(raw.indexOf("["), raw.lastIndexOf("]") + 1);
+  const parsed = JSON.parse(jsonStr);
+  if (!Array.isArray(parsed) || parsed.length !== lines.length) {
+    throw new Error("Segmentation response shape mismatch");
+  }
+  return parsed;
 }
 
 function loadSettings() {
@@ -920,8 +1053,8 @@ const appEl = $("app");
 const STATE_LABELS = {
   idle: "Tap to start",
   connecting: "Connecting…",
-  listening: "Listening…",
-  user_speaking: "Listening…",
+  ready: "Tap to talk",
+  user_speaking: "Listening… tap to stop",
   thinking: "Thinking…",
   assistant_speaking: "Speaking…",
   error: "Something went wrong",
@@ -938,9 +1071,9 @@ function setState(state, errorDetail) {
     : STATE_LABELS[state] || state;
 
   const isLive = state !== "idle" && state !== "error";
-  $("orbIconMic").classList.toggle("hidden", isLive);
-  $("orbIconStop").classList.toggle("hidden", !isLive);
-  $("muteBtn").disabled = !isLive;
+  const isRecording = state === "user_speaking";
+  $("orbIconMic").classList.toggle("hidden", isRecording);
+  $("orbIconStop").classList.toggle("hidden", !isRecording);
   $("endSessionBtn").disabled = !isLive;
 }
 
@@ -1010,10 +1143,13 @@ function setTranscriptFinal(role, text) {
 /* Session (WebRTC) management                                            */
 /* ---------------------------------------------------------------------- */
 
-let pc = null;           // RTCPeerConnection
-let dc = null;           // data channel for realtime events
-let localStream = null;  // mic MediaStream
-let isMuted = false;
+let pc = null;             // RTCPeerConnection (realtime mode)
+let dc = null;              // data channel for realtime events (realtime mode)
+let localStream = null;     // mic MediaStream (both modes)
+let currentMode = MODE_ECONOMY;
+let mediaRecorder = null;   // MediaRecorder (economy mode)
+let recordedChunks = [];    // audio chunks for the in-progress recording (economy mode)
+let economyMessages = [];   // chat history sent to /v1/chat/completions (economy mode)
 
 async function startSession() {
   const settings = loadSettings();
@@ -1024,130 +1160,153 @@ async function startSession() {
 
   clearTranscript();
   currentSessionLanguage = settings.language || "en";
-  const silenceDuration = settings.silenceDuration || 500;
+  currentMode = settings.mode || MODE_ECONOMY;
   setState("connecting");
 
   try {
-    // 1. Mint an ephemeral client secret using the real API key.
-    const sessionResp = await fetch(REALTIME_CLIENT_SECRETS_URL, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${settings.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        session: {
-          type: "realtime",
-          model: settings.model,
-          instructions: buildInstructions(settings),
-          audio: {
-            output: { voice: settings.voice },
-            input: {
-              turn_detection: {
-                type: "server_vad",
-                create_response: true,
-                interrupt_response: true,
-                silence_duration_ms: silenceDuration,
-              },
-              transcription: { model: TRANSCRIBE_MODEL, language: settings.language },
-            },
-          },
-        },
-      }),
-    });
-
-    if (!sessionResp.ok) {
-      const text = await sessionResp.text().catch(() => "");
-      throw new Error(
-        sessionResp.status === 401
-          ? "OpenAI rejected the API key (401)."
-          : `Could not start a Realtime session (${sessionResp.status}). ${text.slice(0, 200)}`
-      );
+    if (currentMode === MODE_REALTIME) {
+      await startRealtimeSession(settings);
+    } else {
+      await startEconomySession(settings);
     }
-
-    const sessionData = await sessionResp.json();
-    const ephemeralKey = sessionData?.value;
-    if (!ephemeralKey) {
-      throw new Error("No client secret returned by OpenAI — check the model id.");
-    }
-
-    // 2. Mic access.
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-    // 3. Peer connection + remote audio playback.
-    pc = new RTCPeerConnection();
-
-    pc.ontrack = (event) => {
-      const audioEl = $("remoteAudio");
-      audioEl.srcObject = event.streams[0];
-    };
-
-    localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
-
-    // 4. Data channel for realtime events (session.update, VAD signals, etc).
-    dc = pc.createDataChannel("oai-events");
-    dc.addEventListener("open", () => {
-      // Reinforce voice/instructions + hands-free server VAD turn detection.
-      dc.send(JSON.stringify({
-        type: "session.update",
-        session: {
-          type: "realtime",
-          instructions: buildInstructions(settings),
-          audio: {
-            output: { voice: settings.voice },
-            input: {
-              turn_detection: {
-                type: "server_vad",
-                create_response: true,
-                interrupt_response: true, // enables barge-in
-                silence_duration_ms: silenceDuration,
-              },
-              transcription: { model: TRANSCRIBE_MODEL, language: settings.language },
-            },
-          },
-        },
-      }));
-      setState("listening");
-    });
-    dc.addEventListener("message", handleRealtimeEvent);
-    dc.addEventListener("close", () => {
-      if (currentState !== "error") setState("idle");
-    });
-
-    // 5. SDP offer/answer handshake against the Realtime endpoint.
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    const sdpResp = await fetch(REALTIME_CALLS_URL, {
-      method: "POST",
-      body: offer.sdp,
-      headers: {
-        "Authorization": `Bearer ${ephemeralKey}`,
-        "Content-Type": "application/sdp",
-      },
-    });
-
-    if (!sdpResp.ok) {
-      const text = await sdpResp.text().catch(() => "");
-      throw new Error(`Realtime handshake failed (${sdpResp.status}). ${text.slice(0, 200)}`);
-    }
-
-    const answerSdp = await sdpResp.text();
-    await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
-
-    pc.onconnectionstatechange = () => {
-      if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
-        if (currentState !== "idle" && currentState !== "error") {
-          endSession();
-        }
-      }
-    };
-
   } catch (err) {
     console.error("[VoiceCoach] startSession failed:", err);
     endSession(true);
     setState("error", humanizeError(err));
   }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Realtime mode (WebRTC, push-to-talk)                                   */
+/* ---------------------------------------------------------------------- */
+
+async function startRealtimeSession(settings) {
+  // 1. Mint an ephemeral client secret using the real API key.
+  const sessionResp = await fetch(REALTIME_CLIENT_SECRETS_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${settings.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      session: {
+        type: "realtime",
+        model: settings.model,
+        instructions: buildInstructions(settings),
+        audio: {
+          output: { voice: settings.voice },
+          input: {
+            turn_detection: null, // push-to-talk: we drive turns manually, no server VAD
+            transcription: { model: TRANSCRIBE_MODEL, language: settings.language },
+          },
+        },
+      },
+    }),
+  });
+
+  if (!sessionResp.ok) {
+    const text = await sessionResp.text().catch(() => "");
+    throw new Error(
+      sessionResp.status === 401
+        ? "OpenAI rejected the API key (401)."
+        : `Could not start a Realtime session (${sessionResp.status}). ${text.slice(0, 200)}`
+    );
+  }
+
+  const sessionData = await sessionResp.json();
+  const ephemeralKey = sessionData?.value;
+  if (!ephemeralKey) {
+    throw new Error("No client secret returned by OpenAI — check the model id.");
+  }
+
+  // 2. Mic access — kept disabled until the user taps to talk.
+  localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  localStream.getTracks().forEach((t) => { t.enabled = false; });
+
+  // 3. Peer connection + remote audio playback.
+  pc = new RTCPeerConnection();
+
+  pc.ontrack = (event) => {
+    const audioEl = $("remoteAudio");
+    audioEl.srcObject = event.streams[0];
+  };
+
+  localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+
+  // 4. Data channel for realtime events (session.update, transcript deltas, etc).
+  dc = pc.createDataChannel("oai-events");
+  dc.addEventListener("open", () => {
+    dc.send(JSON.stringify({
+      type: "session.update",
+      session: {
+        type: "realtime",
+        instructions: buildInstructions(settings),
+        audio: {
+          output: { voice: settings.voice },
+          input: {
+            turn_detection: null,
+            transcription: { model: TRANSCRIBE_MODEL, language: settings.language },
+          },
+        },
+      },
+    }));
+    setState("ready");
+  });
+  dc.addEventListener("message", handleRealtimeEvent);
+  dc.addEventListener("close", () => {
+    if (currentState !== "error") setState("idle");
+  });
+
+  // 5. SDP offer/answer handshake against the Realtime endpoint.
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  const sdpResp = await fetch(REALTIME_CALLS_URL, {
+    method: "POST",
+    body: offer.sdp,
+    headers: {
+      "Authorization": `Bearer ${ephemeralKey}`,
+      "Content-Type": "application/sdp",
+    },
+  });
+
+  if (!sdpResp.ok) {
+    const text = await sdpResp.text().catch(() => "");
+    throw new Error(`Realtime handshake failed (${sdpResp.status}). ${text.slice(0, 200)}`);
+  }
+
+  const answerSdp = await sdpResp.text();
+  await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+
+  pc.onconnectionstatechange = () => {
+    if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
+      if (currentState !== "idle" && currentState !== "error") {
+        endSession();
+      }
+    }
+  };
+}
+
+function realtimeBeginRecording() {
+  if (!dc || !localStream) return;
+  dc.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
+  bubbleFor("user"); // reserve the DOM slot now, before any transcript text arrives
+  localStream.getTracks().forEach((t) => { t.enabled = true; });
+  setState("user_speaking");
+}
+
+function realtimeStopRecording() {
+  if (!dc || !localStream) return;
+  localStream.getTracks().forEach((t) => { t.enabled = false; });
+  dc.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+  dc.send(JSON.stringify({ type: "response.create" }));
+  setState("thinking");
+}
+
+function realtimeInterruptAndRecord() {
+  if (!dc) return;
+  dc.send(JSON.stringify({ type: "response.cancel" }));
+  realtimeBeginRecording();
 }
 
 function handleRealtimeEvent(event) {
@@ -1159,17 +1318,6 @@ function handleRealtimeEvent(event) {
   }
 
   switch (msg.type) {
-    case "input_audio_buffer.speech_started":
-      // Claim the bubble's DOM position now, chronologically, since the
-      // input transcription itself can arrive after the assistant's reply
-      // has already started streaming — without this, late user-transcript
-      // text gets appended below the AI's response instead of above it.
-      bubbleFor("user");
-      setState("user_speaking");
-      break;
-    case "input_audio_buffer.speech_stopped":
-      setState("thinking");
-      break;
     case "conversation.item.input_audio_transcription.delta":
       appendTranscriptDelta("user", msg.delta);
       break;
@@ -1193,7 +1341,7 @@ function handleRealtimeEvent(event) {
     case "output_audio_buffer.stopped":
     case "response.done":
       setTranscriptFinal("assistant"); // safety net if the .done transcript event above didn't fire
-      setState("listening");
+      setState("ready");
       break;
     case "error":
       console.error("[VoiceCoach] realtime error event:", msg);
@@ -1205,17 +1353,185 @@ function handleRealtimeEvent(event) {
   }
 }
 
+/* ---------------------------------------------------------------------- */
+/* Economy mode (REST: transcribe -> chat -> speak, push-to-talk)         */
+/* ---------------------------------------------------------------------- */
+
+async function startEconomySession(settings) {
+  localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  economyMessages = [{ role: "system", content: buildInstructions(settings) }];
+  setState("ready");
+}
+
+function economyBeginRecording() {
+  if (!localStream) return;
+  bubbleFor("user"); // reserve the DOM slot now, before transcription resolves
+  recordedChunks = [];
+  const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))
+    ? "audio/webm;codecs=opus"
+    : "audio/webm";
+  mediaRecorder = new MediaRecorder(localStream, { mimeType });
+  mediaRecorder.addEventListener("dataavailable", (e) => {
+    if (e.data && e.data.size) recordedChunks.push(e.data);
+  });
+  mediaRecorder.start();
+  setState("user_speaking");
+}
+
+function economyStopRecording() {
+  if (!mediaRecorder) return;
+  setState("thinking");
+  const recorder = mediaRecorder;
+  const stopped = new Promise((resolve) => {
+    recorder.addEventListener("stop", resolve, { once: true });
+  });
+  recorder.stop();
+  stopped.then(() => processEconomyTurn(recorder.mimeType));
+}
+
+function economyInterruptAndRecord() {
+  try { $("remoteAudio").pause(); } catch (e) {}
+  economyBeginRecording();
+}
+
+async function processEconomyTurn(mimeType) {
+  try {
+    const blob = new Blob(recordedChunks, { type: mimeType || "audio/webm" });
+    if (!blob.size) {
+      setTranscriptFinal("user"); // drop the reserved empty bubble
+      setState("ready");
+      return;
+    }
+    const settings = loadSettings();
+
+    const userText = await economyTranscribe(blob, settings);
+    setTranscriptFinal("user", userText);
+    if (!userText.trim()) {
+      setState("ready");
+      return;
+    }
+    economyMessages.push({ role: "user", content: userText });
+
+    const replyText = await economyChat(settings);
+    economyMessages.push({ role: "assistant", content: replyText });
+    setTranscriptFinal("assistant", replyText);
+
+    setState("assistant_speaking");
+    const audioUrl = await economySpeak(replyText, settings);
+    await playEconomyAudio(audioUrl);
+
+    if (currentState === "assistant_speaking") setState("ready");
+  } catch (err) {
+    console.error("[VoiceCoach] economy turn failed:", err);
+    setState("error", humanizeError(err));
+  }
+}
+
+async function economyTranscribe(blob, settings) {
+  const form = new FormData();
+  form.append("file", blob, "audio.webm");
+  form.append("model", ECONOMY_STT_MODEL);
+  form.append("language", settings.language);
+  const resp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${settings.apiKey}` },
+    body: form,
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`Transcription failed (${resp.status}). ${text.slice(0, 200)}`);
+  }
+  const data = await resp.json();
+  return (data?.text || "").trim();
+}
+
+async function economyChat(settings) {
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${settings.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: ECONOMY_CHAT_MODEL,
+      messages: economyMessages,
+    }),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`Chat request failed (${resp.status}). ${text.slice(0, 200)}`);
+  }
+  const data = await resp.json();
+  return (data?.choices?.[0]?.message?.content || "").trim();
+}
+
+async function economySpeak(text, settings) {
+  const resp = await fetch("https://api.openai.com/v1/audio/speech", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${settings.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: ECONOMY_TTS_MODEL,
+      voice: settings.economyVoice || "alloy",
+      input: text,
+    }),
+  });
+  if (!resp.ok) {
+    const text2 = await resp.text().catch(() => "");
+    throw new Error(`Speech synthesis failed (${resp.status}). ${text2.slice(0, 200)}`);
+  }
+  const blob = await resp.blob();
+  return URL.createObjectURL(blob);
+}
+
+function playEconomyAudio(url) {
+  return new Promise((resolve) => {
+    const audioEl = $("remoteAudio");
+    audioEl.srcObject = null;
+    audioEl.src = url;
+    const finish = () => {
+      audioEl.removeEventListener("ended", finish);
+      audioEl.removeEventListener("pause", finish);
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+    audioEl.addEventListener("ended", finish, { once: true });
+    audioEl.addEventListener("pause", finish, { once: true }); // covers economyInterruptAndRecord()
+    audioEl.play().catch(finish);
+  });
+}
+
+/* ---------------------------------------------------------------------- */
+/* Shared orb tap dispatch + session teardown                             */
+/* ---------------------------------------------------------------------- */
+
+function handleOrbTap() {
+  if (currentMode === MODE_REALTIME) {
+    if (currentState === "ready") realtimeBeginRecording();
+    else if (currentState === "user_speaking") realtimeStopRecording();
+    else if (currentState === "thinking" || currentState === "assistant_speaking") realtimeInterruptAndRecord();
+  } else {
+    if (currentState === "ready") economyBeginRecording();
+    else if (currentState === "user_speaking") economyStopRecording();
+    else if (currentState === "assistant_speaking") economyInterruptAndRecord();
+    // no-op while "thinking" — economy mode's transcribe/chat REST calls aren't cancellable mid-flight
+  }
+}
+
 function endSession(silent) {
   try { dc && dc.close(); } catch (e) {}
   try { pc && pc.close(); } catch (e) {}
+  try { mediaRecorder && mediaRecorder.state !== "inactive" && mediaRecorder.stop(); } catch (e) {}
+  try { $("remoteAudio").pause(); } catch (e) {}
   try {
     if (localStream) localStream.getTracks().forEach((t) => t.stop());
   } catch (e) {}
   dc = null;
   pc = null;
   localStream = null;
-  isMuted = false;
-  $("muteBtn").classList.remove("active");
+  mediaRecorder = null;
   if (!silent) setState("idle");
 }
 
@@ -1224,13 +1540,6 @@ function humanizeError(err) {
   if (err.name === "NotAllowedError") return "Microphone permission was denied.";
   if (err.name === "NotFoundError") return "No microphone was found.";
   return err.message || "Unknown error.";
-}
-
-function toggleMute() {
-  if (!localStream) return;
-  isMuted = !isMuted;
-  localStream.getTracks().forEach((t) => (t.enabled = !isMuted));
-  $("muteBtn").classList.toggle("active", isMuted);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1243,41 +1552,96 @@ function tokenizeForSelection(text) {
 
 // Strips leading/trailing punctuation while keeping any Unicode letters or
 // digits (Hangul, Kana/Kanji, Han, Latin, etc.) — the "clean" word we store
-// on the flashcard, as opposed to the token shown on screen.
+// on the flashcard, as opposed to the raw segment text shown on screen.
 function cleanWord(token) {
   return token.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
 }
 
-function openTranscriptReview() {
+// Fallback segmentation used before analysis resolves, and for any line the
+// model's segmentation fails validation on. Whitespace-splitting is exact
+// for space-delimited languages; for CJK it degrades to "whole line is one
+// word", which is why analyzeTranscriptSegments() exists.
+function naiveSegments(text) {
+  const words = tokenizeForSelection(text);
+  return { words: words.length ? words : [text], phrases: [text] };
+}
+
+// Splits a marker-delimited string back into its original pieces, but only
+// if doing so reconstructs the original text exactly — guards against the
+// model altering characters instead of just inserting boundary markers.
+function splitMarked(marked, delimiter, original) {
+  if (typeof marked !== "string") return null;
+  const parts = marked.split(delimiter);
+  if (parts.join("") !== original) return null;
+  return parts.filter((p) => p.length > 0);
+}
+
+let segmentCache = [];       // parallel to transcriptHistory: [{words:[...], phrases:[...]}]
+let segmentMode = "words";   // "words" | "phrases" — which cached array to render
+
+async function openTranscriptReview() {
+  segmentMode = "words";
+  $$(".pill-toggle-btn", $("segToggle")).forEach((b) => b.classList.toggle("active", b.dataset.seg === "words"));
+  $("transcriptReviewModal").classList.remove("hidden");
+
+  if (!transcriptHistory.length) {
+    $("trAnalyzing").classList.add("hidden");
+    $("trBody").innerHTML = '<div class="transcript-empty">No conversation to review.</div>';
+    return;
+  }
+
+  // Render immediately with naive whitespace segmentation so something's on
+  // screen right away, then upgrade in place once analysis resolves.
+  segmentCache = transcriptHistory.map((e) => naiveSegments(e.text));
+  renderTranscriptReviewBody();
+  $("trAnalyzing").classList.remove("hidden");
+
+  try {
+    const analyzed = await analyzeTranscriptSegments(
+      transcriptHistory.map((e) => e.text),
+      currentSessionLanguage
+    );
+    segmentCache = transcriptHistory.map((entry, i) => {
+      const fallback = naiveSegments(entry.text);
+      const words = splitMarked(analyzed[i]?.words, WORD_DELIM, entry.text);
+      const phrases = splitMarked(analyzed[i]?.phrases, PHRASE_DELIM, entry.text);
+      return {
+        words: words && words.length ? words : fallback.words,
+        phrases: phrases && phrases.length ? phrases : fallback.phrases,
+      };
+    });
+  } catch (err) {
+    console.error("[VoiceCoach] transcript analysis failed, using naive segmentation:", err);
+  } finally {
+    $("trAnalyzing").classList.add("hidden");
+    renderTranscriptReviewBody();
+  }
+}
+
+function renderTranscriptReviewBody() {
   const body = $("trBody");
   body.innerHTML = "";
-  if (!transcriptHistory.length) {
-    body.innerHTML = '<div class="transcript-empty">No conversation to review.</div>';
-  } else {
-    transcriptHistory.forEach((entry) => {
-      const bubble = document.createElement("div");
-      bubble.className = `bubble ${entry.role}`;
-      tokenizeForSelection(entry.text).forEach((tok) => {
-        if (/^\s+$/.test(tok)) {
-          bubble.appendChild(document.createTextNode(tok));
-          return;
-        }
-        const clean = cleanWord(tok);
-        const span = document.createElement("span");
-        span.textContent = tok;
-        if (clean) {
-          span.className = "word";
-          span.dataset.word = clean;
-          span.dataset.context = entry.text;
-        } else {
-          span.className = "word no-select";
-        }
-        bubble.appendChild(span);
-      });
-      body.appendChild(bubble);
+  transcriptHistory.forEach((entry, i) => {
+    const bubble = document.createElement("div");
+    bubble.className = `bubble ${entry.role}`;
+    const parts = (segmentCache[i] && segmentCache[i][segmentMode]) || [entry.text];
+    let seg = 0;
+    parts.forEach((part) => {
+      const clean = cleanWord(part);
+      const span = document.createElement("span");
+      span.textContent = part;
+      if (clean) {
+        span.className = `word ${seg % 2 === 0 ? "seg-a" : "seg-b"}`;
+        span.dataset.word = clean;
+        span.dataset.context = entry.text;
+        seg += 1;
+      } else {
+        span.className = "word no-select";
+      }
+      bubble.appendChild(span);
     });
-  }
-  $("transcriptReviewModal").classList.remove("hidden");
+    body.appendChild(bubble);
+  });
 }
 
 function markWordAdded(word) {
@@ -1288,6 +1652,14 @@ $("trBody").addEventListener("click", (e) => {
   const span = e.target.closest(".word");
   if (!span || span.classList.contains("no-select")) return;
   openWordModal(span.dataset.word, span.dataset.context);
+});
+
+$("segToggle").addEventListener("click", (e) => {
+  const btn = e.target.closest(".pill-toggle-btn");
+  if (!btn) return;
+  segmentMode = btn.dataset.seg;
+  $$(".pill-toggle-btn", $("segToggle")).forEach((b) => b.classList.toggle("active", b === btn));
+  renderTranscriptReviewBody();
 });
 
 $("closeTranscriptReviewBtn").addEventListener("click", () => {
@@ -1482,12 +1854,39 @@ function openMain() {
 $("tabCoachBtn").addEventListener("click", () => switchTab("coach"));
 $("tabCardsBtn").addEventListener("click", () => switchTab("cards"));
 
-$("responseDelayInput").addEventListener("input", () => {
-  $("responseDelayValue").textContent = `${$("responseDelayInput").value}ms`;
-});
-$("s_responseDelayInput").addEventListener("input", () => {
-  $("s_responseDelayValue").textContent = `${$("s_responseDelayInput").value}ms`;
-});
+// Wires a Realtime/Economy pill toggle: shows the right voice field + the
+// realtime-only model field for whichever mode is currently selected.
+// Returns the apply(mode) function so callers can re-sync it (e.g. Settings
+// re-populating from saved settings each time it opens).
+function wireModeToggle(toggleEl, hintEl, voiceFieldEl, economyVoiceFieldEl, modelFieldEl) {
+  function apply(mode) {
+    $$(".pill-toggle-btn", toggleEl).forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+    hintEl.textContent = MODE_HINTS[mode] || "";
+    voiceFieldEl.classList.toggle("hidden", mode !== MODE_REALTIME);
+    economyVoiceFieldEl.classList.toggle("hidden", mode !== MODE_ECONOMY);
+    modelFieldEl.classList.toggle("hidden", mode !== MODE_REALTIME);
+  }
+  toggleEl.addEventListener("click", (e) => {
+    const btn = e.target.closest(".pill-toggle-btn");
+    if (!btn) return;
+    apply(btn.dataset.mode);
+  });
+  return apply;
+}
+
+function activeMode(toggleEl) {
+  const btn = toggleEl.querySelector(".pill-toggle-btn.active");
+  return btn ? btn.dataset.mode : MODE_ECONOMY;
+}
+
+const applySetupMode = wireModeToggle(
+  $("modeToggle"), $("modeHint"), $("voiceField"), $("economyVoiceField"), $("modelField")
+);
+applySetupMode(MODE_ECONOMY);
+
+const applySettingsMode = wireModeToggle(
+  $("s_modeToggle"), $("s_modeHint"), $("s_voiceField"), $("s_economyVoiceField"), $("s_modelField")
+);
 
 $("saveSetupBtn").addEventListener("click", () => {
   const apiKey = $("apiKeyInput").value.trim();
@@ -1500,8 +1899,9 @@ $("saveSetupBtn").addEventListener("click", () => {
   saveSettings({
     apiKey,
     language: $("languageSelect").value,
-    silenceDuration: Number($("responseDelayInput").value) || 500,
+    mode: activeMode($("modeToggle")),
     voice: $("voiceSelect").value,
+    economyVoice: $("economyVoiceSelect").value,
     instructions: $("instructionsInput").value.trim(),
     model: $("modelInput").value.trim() || "gpt-realtime",
   });
@@ -1511,12 +1911,10 @@ $("saveSetupBtn").addEventListener("click", () => {
 $("orbBtn").addEventListener("click", () => {
   if (currentState === "idle" || currentState === "error") {
     startSession();
-  } else {
-    endSession();
+  } else if (currentState !== "connecting") {
+    handleOrbTap();
   }
 });
-
-$("muteBtn").addEventListener("click", toggleMute);
 
 $("endSessionBtn").addEventListener("click", () => {
   endSession();
@@ -1527,9 +1925,9 @@ $("gearBtn").addEventListener("click", () => {
   const settings = loadSettings() || {};
   $("s_apiKeyInput").value = settings.apiKey || "";
   $("s_languageSelect").value = settings.language || "en";
-  $("s_responseDelayInput").value = settings.silenceDuration || 500;
-  $("s_responseDelayValue").textContent = `${settings.silenceDuration || 500}ms`;
+  applySettingsMode(settings.mode || MODE_ECONOMY);
   $("s_voiceSelect").value = settings.voice || "marin";
+  $("s_economyVoiceSelect").value = settings.economyVoice || "alloy";
   $("s_instructionsInput").value = settings.instructions || "";
   $("s_modelInput").value = settings.model || "gpt-realtime";
   $("settingsModal").classList.remove("hidden");
@@ -1548,8 +1946,9 @@ $("saveSettingsBtn").addEventListener("click", () => {
   saveSettings({
     apiKey,
     language: $("s_languageSelect").value,
-    silenceDuration: Number($("s_responseDelayInput").value) || 500,
+    mode: activeMode($("s_modeToggle")),
     voice: $("s_voiceSelect").value,
+    economyVoice: $("s_economyVoiceSelect").value,
     instructions: $("s_instructionsInput").value.trim(),
     model: $("s_modelInput").value.trim() || "gpt-realtime",
   });
