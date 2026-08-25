@@ -94,6 +94,116 @@
     text-align:center;
   }
 
+  /* ---------- language switcher bar (sits above the tab nav) ---------- */
+  .lang-bar{
+    position:relative;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    flex-shrink:0;
+    padding:8px 10px;
+    border-top:1px solid var(--border);
+    background:var(--bg2);
+  }
+  .lang-bar-btn{
+    flex:1;
+    min-width:0;
+    background:transparent;
+    border:1px solid transparent;
+    border-radius:999px;
+    color:var(--dim);
+    font-size:12px;
+    font-weight:600;
+    padding:7px 4px;
+    cursor:pointer;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .lang-bar-btn:hover{ color:var(--fg); }
+  .lang-bar-btn.active{
+    color:var(--fg);
+    background:var(--panel);
+    border-color:var(--border);
+  }
+  .lang-more-btn{
+    flex-shrink:0;
+    background:transparent;
+    border:1px solid var(--border);
+    border-radius:999px;
+    color:var(--dim);
+    font-size:12px;
+    font-weight:700;
+    padding:7px 12px;
+    cursor:pointer;
+  }
+  .lang-more-btn:hover{ color:var(--fg); }
+  .lang-menu{
+    position:absolute;
+    right:10px;
+    bottom:calc(100% + 6px);
+    z-index:20;
+    min-width:170px;
+    max-height:250px;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:6px;
+    box-shadow:0 10px 30px rgba(0,0,0,.5);
+  }
+  .lang-menu-item{
+    display:block;
+    width:100%;
+    text-align:left;
+    background:transparent;
+    border:none;
+    border-radius:8px;
+    color:var(--fg);
+    font-size:13px;
+    padding:9px 10px;
+    cursor:pointer;
+  }
+  .lang-menu-item:hover{ background:var(--bg2); }
+  .lang-menu-item.active{ color:var(--accent2); font-weight:700; }
+
+  /* ---------- deep-dive translation chat (add-word modal) ---------- */
+  .dd-log{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    max-height:190px;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    padding:4px 2px;
+  }
+  .dd-msg{
+    max-width:85%;
+    font-size:13px;
+    line-height:1.45;
+    padding:8px 11px;
+    border-radius:12px;
+    white-space:pre-wrap;
+  }
+  .dd-msg.user{ align-self:flex-end; background:var(--accent2); color:#0a0b10; }
+  .dd-msg.ai{ align-self:flex-start; background:var(--bg2); border:1px solid var(--border); }
+  .dd-msg.thinking{ align-self:flex-start; color:var(--dim); font-style:italic; }
+  .dd-input-row{ display:flex; gap:8px; align-items:center; }
+  .dd-input-row input{ flex:1; min-width:0; }
+  .dd-send-btn{
+    flex-shrink:0;
+    border:none;
+    border-radius:10px;
+    padding:10px 14px;
+    font-size:13px;
+    font-weight:700;
+    cursor:pointer;
+    background:linear-gradient(135deg, var(--accent), var(--accent2));
+    color:#0a0b10;
+  }
+  .dd-send-btn:disabled{ opacity:.5; cursor:not-allowed; }
+
   /* ---------- top-right gear ---------- */
   .gear-btn{
     position:absolute;
@@ -389,6 +499,13 @@
   .icon-btn svg{ width:20px; height:20px; }
   .icon-btn:hover{ border-color:var(--accent); color:var(--fg); }
   .icon-btn:disabled{ opacity:.4; cursor:not-allowed; }
+  .icon-btn.active{
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#0a0b10;
+  }
+  .icon-btn.active:hover{ color:#0a0b10; }
+  .icon-btn .icon-btn-label{ font-size:13px; font-weight:800; letter-spacing:.02em; }
 
   .hidden{ display:none !important; }
 
@@ -720,6 +837,12 @@
       <div class="status" id="statusText">Tap to start</div>
 
       <div class="controls">
+        <!-- While active the coach may drop out of the target language and
+             help in English; it stays on until the user taps it off. -->
+        <button class="icon-btn" id="englishHelpBtn" disabled aria-pressed="false"
+                title="Ask for help in English" aria-label="Ask for help in English">
+          <span class="icon-btn-label">EN</span>
+        </button>
         <button class="icon-btn" id="endSessionBtn" disabled title="End session &amp; review transcript" aria-label="End session and review transcript">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
             <path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/>
@@ -744,6 +867,12 @@
   </div>
 
   </div><!-- /.app-content -->
+
+  <!-- ============ LANGUAGE SWITCHER BAR ============ -->
+  <!-- Up to 5 languages, most-recently-used first; the rest live behind More. -->
+  <div class="lang-bar hidden" id="langBar">
+    <div class="lang-menu hidden" id="langMenu"></div>
+  </div>
 
   <!-- ============ BOTTOM TAB NAV ============ -->
   <div class="tab-nav hidden" id="tabNav">
@@ -802,6 +931,21 @@
       <audio id="wordAudioPreview" controls style="width:100%; height:36px;"></audio>
     </div>
     <div class="hint hidden" id="wordAudioStatus" aria-live="polite"></div>
+
+    <!-- Optional back-and-forth about what the word really means here; the
+         coach can refine the translation/pronunciation fields as it goes. -->
+    <button class="btn btn-ghost" id="deepDiveToggleBtn" style="padding:10px 14px; font-size:13px;">
+      Dive deeper into this word
+    </button>
+    <div class="field hidden" id="deepDiveSection">
+      <div class="dd-log" id="deepDiveLog"></div>
+      <div class="dd-input-row" style="margin-top:8px;">
+        <input type="text" id="deepDiveInput" spellcheck="false"
+               placeholder="Ask about nuance, usage, why this word…" />
+        <button class="dd-send-btn" id="deepDiveSendBtn">Send</button>
+      </div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-ghost" id="cancelWordBtn">Cancel</button>
       <button class="btn btn-primary" id="saveWordBtn" style="flex:1;">Save flashcard</button>
@@ -1007,11 +1151,19 @@ function languageName(code) {
 // Prepends a language-lock instruction ahead of the user's own personality
 // prompt, so the model speaks/understands only the selected language
 // regardless of what language the user actually speaks to it in.
-function buildInstructions(settings) {
+function buildInstructions(settings, assistInEnglish) {
   const name = languageName(settings.language);
-  const lock = `Speak and understand only ${name}. Always respond in ${name}, ` +
-    `even if the user speaks or writes in a different language — gently ` +
-    `continue the conversation in ${name} rather than switching.`;
+  const lock = assistInEnglish
+    // The user has explicitly asked for help, so the language lock is lifted
+    // until they turn it back off (see setEnglishAssist).
+    ? `The learner has asked for help in English. You may speak English for ` +
+      `now: explain what they're stuck on, give them the ${name} words or ` +
+      `phrasing they need, and help them understand. Keep it short and ` +
+      `spoken. When you give ${name} examples, say them in ${name}. Stay in ` +
+      `this helping mode until told otherwise.`
+    : `Speak and understand only ${name}. Always respond in ${name}, ` +
+      `even if the user speaks or writes in a different language — gently ` +
+      `continue the conversation in ${name} rather than switching.`;
   return settings.instructions ? `${lock}\n\n${settings.instructions}` : lock;
 }
 
@@ -1296,6 +1448,8 @@ function setState(state, errorDetail) {
   $("orbIconMic").classList.toggle("hidden", isRecording);
   $("orbIconStop").classList.toggle("hidden", !isRecording);
   $("endSessionBtn").disabled = !isLive;
+  $("englishHelpBtn").disabled = !isLive;
+  if (!isLive && englishAssist) setEnglishAssist(false);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1354,12 +1508,6 @@ function setTranscriptFinal(role, text) {
         role,
         text: finalText,
         lang: currentSessionLanguage,
-        audioBlob: bubble._audioBlob || null,
-        audioAlignment: null,
-        audioAlignmentPromise: null,
-        decodedAudioPromise: null,
-        audioClipCache: new Map(),
-        _audioWaiters: [],
       };
       transcriptHistory.push(entry);
     } else {
@@ -1376,32 +1524,6 @@ function setTranscriptFinal(role, text) {
   return entry;
 }
 
-// Attaches a captured audio clip to a turn. Audio can arrive either before
-// or after that turn's transcript text finalizes (order isn't guaranteed in
-// either mode), so this handles both: if the bubble is still open, stash the
-// blob on it for setTranscriptFinal() to pick up; if it already finalized,
-// find the most recent transcriptHistory entry for that role and attach it
-// there directly.
-function attachAudio(role, blob, turnId = null) {
-  const bubble = role === "user" ? userBubbleEl : assistantBubbleEl;
-  if (bubble && (!turnId || bubble._turnId === turnId)) {
-    bubble._audioBlob = blob;
-    return;
-  }
-  for (let i = transcriptHistory.length - 1; i >= 0; i--) {
-    const entry = transcriptHistory[i];
-    if ((turnId && entry.id === turnId) || (!turnId && entry.role === role)) {
-      entry.audioBlob = blob;
-      entry.audioAlignment = null;
-      entry.audioAlignmentPromise = null;
-      entry.decodedAudioPromise = null;
-      entry.audioClipCache = new Map();
-      (entry._audioWaiters || []).splice(0).forEach((resolve) => resolve(blob));
-      return;
-    }
-  }
-}
-
 /* ---------------------------------------------------------------------- */
 /* Session (WebRTC) management                                            */
 /* ---------------------------------------------------------------------- */
@@ -1413,22 +1535,42 @@ let currentMode = MODE_ECONOMY;
 let mediaRecorder = null;   // MediaRecorder (economy mode)
 let economyMessages = [];   // chat history sent to /v1/chat/completions (economy mode)
 
-// Local recording of the user's own mic, purely for flashcard playback —
-// realtime mode ships audio straight to OpenAI over the RTC track, so
-// without this we'd have no clip of what the user actually said.
-let localRecorder = null;
+// While true the coach is allowed to answer in English to help the learner
+// out. Latched on/off by the EN button rather than per-turn, so the user can
+// have a whole side conversation in English and then switch back.
+let englishAssist = false;
 
-// Realtime mode's assistant audio only exists as a live WebRTC media track
-// (WebRTC transport doesn't send audio as data-channel events); we record
-// straight off that track to get a clip.
-let assistantRecorder = null;
-// The raw remote MediaStream from pc.ontrack, kept around so
-// startAssistantCapture() can record it directly. Deliberately NOT using
-// audioEl.captureStream() here — that API has no Safari/iOS support at all,
-// which silently dropped every assistant clip on those browsers. Recording
-// the RTCPeerConnection's own track works everywhere MediaRecorder does.
-let remoteStream = null;
+// Pushes the current englishAssist mode into whichever session is running.
+// Realtime takes a session.update over the data channel; economy mode just
+// rewrites its system message, which is re-sent with every REST turn.
+function applyAssistInstructions() {
+  const settings = loadSettings();
+  if (!settings) return;
+  const instructions = buildInstructions(settings, englishAssist);
+  if (currentMode === MODE_REALTIME) {
+    if (dc && dc.readyState === "open") {
+      dc.send(JSON.stringify({
+        type: "session.update",
+        session: { type: "realtime", instructions },
+      }));
+    }
+  } else if (economyMessages.length && economyMessages[0].role === "system") {
+    economyMessages[0].content = instructions;
+  }
+}
 
+function setEnglishAssist(on) {
+  englishAssist = on;
+  const btn = $("englishHelpBtn");
+  btn.classList.toggle("active", on);
+  btn.setAttribute("aria-pressed", String(on));
+  btn.title = on ? "Stop English help — back to the target language" : "Ask for help in English";
+  applyAssistInstructions();
+}
+
+// Economy mode records the user's turn to send to the transcription
+// endpoint. Flashcard audio no longer comes from the conversation at all
+// (it's synthesized per word), so nothing else is captured or retained.
 function recordingOptions() {
   if (!window.MediaRecorder) return {};
   const preferredTypes = [
@@ -1441,63 +1583,6 @@ function recordingOptions() {
   return mimeType ? { mimeType } : {};
 }
 
-function startLocalRecording() {
-  if (!localStream) return;
-  try {
-    localRecorder = new MediaRecorder(localStream, recordingOptions());
-    localRecorder._chunks = [];
-    localRecorder._turnId = bubbleFor("user")._turnId;
-    localRecorder.addEventListener("dataavailable", (e) => {
-      if (e.data && e.data.size) e.currentTarget._chunks.push(e.data);
-    });
-    localRecorder.start();
-  } catch (e) {
-    console.error("[VoiceCoach] local audio capture failed:", e);
-    localRecorder = null;
-  }
-}
-
-function stopLocalRecording(role) {
-  if (!localRecorder || localRecorder.state === "inactive") return;
-  const recorder = localRecorder;
-  localRecorder = null;
-  const stopped = new Promise((resolve) => recorder.addEventListener("stop", resolve, { once: true }));
-  recorder.stop();
-  stopped.then(() => {
-    const blob = new Blob(recorder._chunks || [], { type: recorder.mimeType || "audio/webm" });
-    if (blob.size) attachAudio(role, blob, recorder._turnId);
-  });
-}
-
-function startAssistantCapture() {
-  if (assistantRecorder) return; // already capturing this response
-  if (!remoteStream) return; // track hasn't arrived yet — nothing to record
-  try {
-    assistantRecorder = new MediaRecorder(remoteStream, recordingOptions());
-    assistantRecorder._chunks = [];
-    assistantRecorder._turnId = bubbleFor("assistant")._turnId;
-    assistantRecorder.addEventListener("dataavailable", (e) => {
-      if (e.data && e.data.size) e.currentTarget._chunks.push(e.data);
-    });
-    assistantRecorder.start();
-  } catch (e) {
-    console.error("[VoiceCoach] assistant audio capture failed:", e);
-    assistantRecorder = null;
-  }
-}
-
-function stopAssistantCapture() {
-  if (!assistantRecorder || assistantRecorder.state === "inactive") return;
-  const recorder = assistantRecorder;
-  assistantRecorder = null;
-  const stopped = new Promise((resolve) => recorder.addEventListener("stop", resolve, { once: true }));
-  recorder.stop();
-  stopped.then(() => {
-    const blob = new Blob(recorder._chunks || [], { type: recorder.mimeType || "audio/webm" });
-    if (blob.size) attachAudio("assistant", blob, recorder._turnId);
-  });
-}
-
 async function startSession() {
   const settings = loadSettings();
   if (!settings) {
@@ -1508,6 +1593,9 @@ async function startSession() {
   clearTranscript();
   currentSessionLanguage = settings.language || "en";
   currentMode = settings.mode || MODE_ECONOMY;
+  englishAssist = false; // every session starts locked to the target language
+  $("englishHelpBtn").classList.remove("active");
+  $("englishHelpBtn").setAttribute("aria-pressed", "false");
   setState("connecting");
 
   try {
@@ -1539,7 +1627,7 @@ async function startRealtimeSession(settings) {
       session: {
         type: "realtime",
         model: settings.model,
-        instructions: buildInstructions(settings),
+        instructions: buildInstructions(settings, englishAssist),
         audio: {
           output: { voice: settings.voice },
           input: {
@@ -1576,7 +1664,6 @@ async function startRealtimeSession(settings) {
   pc.ontrack = (event) => {
     const audioEl = $("remoteAudio");
     audioEl.srcObject = event.streams[0];
-    remoteStream = event.streams[0];
   };
 
   localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
@@ -1588,7 +1675,7 @@ async function startRealtimeSession(settings) {
       type: "session.update",
       session: {
         type: "realtime",
-        instructions: buildInstructions(settings),
+        instructions: buildInstructions(settings, englishAssist),
         audio: {
           output: { voice: settings.voice },
           input: {
@@ -1640,14 +1727,12 @@ function realtimeBeginRecording() {
   dc.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
   bubbleFor("user"); // reserve the DOM slot now, before any transcript text arrives
   localStream.getTracks().forEach((t) => { t.enabled = true; });
-  startLocalRecording(); // separate local capture, purely for flashcard playback
   setState("user_speaking");
 }
 
 function realtimeStopRecording() {
   if (!dc || !localStream) return;
   localStream.getTracks().forEach((t) => { t.enabled = false; });
-  stopLocalRecording("user");
   dc.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
   dc.send(JSON.stringify({ type: "response.create" }));
   setState("thinking");
@@ -1679,7 +1764,6 @@ function handleRealtimeEvent(event) {
       break;
     case "output_audio_buffer.started":
     case "response.audio.delta":
-      startAssistantCapture();
       setState("assistant_speaking");
       break;
     case "response.output_audio_transcript.delta":
@@ -1691,7 +1775,6 @@ function handleRealtimeEvent(event) {
       break;
     case "output_audio_buffer.stopped":
     case "response.done":
-      stopAssistantCapture();
       setTranscriptFinal("assistant"); // safety net if the .done transcript event above didn't fire
       setState("ready");
       break;
@@ -1711,7 +1794,7 @@ function handleRealtimeEvent(event) {
 
 async function startEconomySession(settings) {
   localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  economyMessages = [{ role: "system", content: buildInstructions(settings) }];
+  economyMessages = [{ role: "system", content: buildInstructions(settings, englishAssist) }];
   setState("ready");
 }
 
@@ -1720,7 +1803,6 @@ function economyBeginRecording() {
   bubbleFor("user"); // reserve the DOM slot now, before transcription resolves
   mediaRecorder = new MediaRecorder(localStream, recordingOptions());
   mediaRecorder._chunks = [];
-  mediaRecorder._turnId = userBubbleEl._turnId;
   mediaRecorder.addEventListener("dataavailable", (e) => {
     if (e.data && e.data.size) e.currentTarget._chunks.push(e.data);
   });
@@ -1736,7 +1818,7 @@ function economyStopRecording() {
     recorder.addEventListener("stop", resolve, { once: true });
   });
   recorder.stop();
-  stopped.then(() => processEconomyTurn(recorder._chunks || [], recorder.mimeType, recorder._turnId));
+  stopped.then(() => processEconomyTurn(recorder._chunks || [], recorder.mimeType));
 }
 
 function economyInterruptAndRecord() {
@@ -1744,7 +1826,7 @@ function economyInterruptAndRecord() {
   economyBeginRecording();
 }
 
-async function processEconomyTurn(chunks, mimeType, turnId) {
+async function processEconomyTurn(chunks, mimeType) {
   try {
     const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
     if (!blob.size) {
@@ -1752,7 +1834,6 @@ async function processEconomyTurn(chunks, mimeType, turnId) {
       setState("ready");
       return;
     }
-    attachAudio("user", blob, turnId);
     const settings = loadSettings();
 
     const userText = await economyTranscribe(blob, settings);
@@ -1765,11 +1846,10 @@ async function processEconomyTurn(chunks, mimeType, turnId) {
 
     const replyText = await economyChat(settings);
     economyMessages.push({ role: "assistant", content: replyText });
-    const assistantEntry = setTranscriptFinal("assistant", replyText);
+    setTranscriptFinal("assistant", replyText);
 
     setState("assistant_speaking");
     const speech = await economySpeak(replyText, settings);
-    attachAudio("assistant", speech.blob, assistantEntry?.id || null);
     await playEconomyAudio(speech.url);
 
     if (currentState === "assistant_speaking") setState("ready");
@@ -1876,8 +1956,6 @@ function endSession(silent) {
   try { dc && dc.close(); } catch (e) {}
   try { pc && pc.close(); } catch (e) {}
   try { mediaRecorder && mediaRecorder.state !== "inactive" && mediaRecorder.stop(); } catch (e) {}
-  try { stopLocalRecording("user"); } catch (e) {}
-  try { stopAssistantCapture(); } catch (e) {}
   try { $("remoteAudio").pause(); } catch (e) {}
   try {
     if (localStream) localStream.getTracks().forEach((t) => t.stop());
@@ -1885,10 +1963,7 @@ function endSession(silent) {
   dc = null;
   pc = null;
   localStream = null;
-  remoteStream = null;
   mediaRecorder = null;
-  localRecorder = null;
-  assistantRecorder = null;
   if (!silent) setState("idle");
 }
 
@@ -2025,228 +2100,6 @@ async function openTranscriptReview() {
   }
 }
 
-function audioSelectionKey(selection) {
-  return `${selection.start}:${selection.end}`;
-}
-
-function normalizedAudioText(text) {
-  return String(text || "")
-    .normalize("NFKC")
-    .toLocaleLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "");
-}
-
-function waitForTurnAudio(entry, timeoutMs = 2500) {
-  if (entry.audioBlob) return Promise.resolve(entry.audioBlob);
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (blob = null) => {
-      if (settled) return;
-      settled = true;
-      resolve(blob);
-    };
-    if (!entry._audioWaiters) entry._audioWaiters = [];
-    entry._audioWaiters.push(finish);
-    setTimeout(finish, timeoutMs);
-  });
-}
-
-function audioFilenameExtension(mimeType) {
-  const type = String(mimeType || "").toLowerCase();
-  if (type.includes("mpeg") || type.includes("mp3")) return "mp3";
-  if (type.includes("mp4") || type.includes("m4a")) return "mp4";
-  if (type.includes("ogg")) return "ogg";
-  if (type.includes("wav")) return "wav";
-  return "webm";
-}
-
-async function requestTurnWordTimestamps(entry) {
-  if (entry.audioAlignment) return entry.audioAlignment;
-  if (entry.audioAlignmentPromise) return entry.audioAlignmentPromise;
-  if (!entry.audioBlob) throw new Error("No conversation audio was recorded for this turn.");
-
-  entry.audioAlignmentPromise = (async () => {
-    const settings = loadSettings();
-    const form = new FormData();
-    const extension = audioFilenameExtension(entry.audioBlob.type);
-    form.append("file", entry.audioBlob, `conversation-turn.${extension}`);
-    form.append("model", "whisper-1");
-    form.append("language", entry.lang || currentSessionLanguage);
-    form.append("response_format", "verbose_json");
-    form.append("timestamp_granularities[]", "word");
-    form.append("prompt", entry.text);
-
-    const resp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${settings.apiKey}` },
-      body: form,
-    });
-    if (!resp.ok) {
-      const detail = await resp.text().catch(() => "");
-      throw new Error(`Audio alignment failed (${resp.status}). ${detail.slice(0, 160)}`);
-    }
-    const data = await resp.json();
-    const words = (Array.isArray(data.words) ? data.words : [])
-      .filter((item) => Number.isFinite(item?.start) && Number.isFinite(item?.end) && item.end > item.start)
-      .map((item) => ({ word: String(item.word || ""), start: item.start, end: item.end }));
-    if (!words.length) throw new Error("The transcription did not return word timestamps.");
-    entry.audioAlignment = words;
-    return words;
-  })().catch((err) => {
-    entry.audioAlignmentPromise = null;
-    throw err;
-  });
-
-  return entry.audioAlignmentPromise;
-}
-
-async function decodeTurnAudio(entry) {
-  if (entry.decodedAudioPromise) return entry.decodedAudioPromise;
-  entry.decodedAudioPromise = (async () => {
-    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextCtor) throw new Error("This browser cannot decode recorded audio.");
-    const context = new AudioContextCtor();
-    try {
-      return await context.decodeAudioData(await entry.audioBlob.arrayBuffer());
-    } finally {
-      context.close().catch(() => {});
-    }
-  })().catch((err) => {
-    entry.decodedAudioPromise = null;
-    throw err;
-  });
-  return entry.decodedAudioPromise;
-}
-
-function findTimestampRange(words, selectedText, approximatePosition) {
-  const target = normalizedAudioText(selectedText);
-  if (!target) return null;
-  const usable = words
-    .map((item) => ({ ...item, normalized: normalizedAudioText(item.word) }))
-    .filter((item) => item.normalized);
-  const candidates = [];
-
-  for (let startIndex = 0; startIndex < usable.length; startIndex++) {
-    let combined = "";
-    for (let endIndex = startIndex; endIndex < usable.length; endIndex++) {
-      combined += usable[endIndex].normalized;
-      if (combined === target) {
-        candidates.push({
-          start: usable[startIndex].start,
-          end: usable[endIndex].end,
-          position: startIndex / Math.max(1, usable.length - 1),
-        });
-        break;
-      }
-      if (combined.length >= target.length) break;
-    }
-  }
-
-  if (!candidates.length) return null;
-  return candidates.sort((a, b) =>
-    Math.abs(a.position - approximatePosition) - Math.abs(b.position - approximatePosition)
-  )[0];
-}
-
-function writeAscii(view, offset, text) {
-  for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
-}
-
-function audioBufferRangeToWav(buffer, startSeconds, endSeconds) {
-  const startFrame = Math.max(0, Math.floor(startSeconds * buffer.sampleRate));
-  const endFrame = Math.min(buffer.length, Math.ceil(endSeconds * buffer.sampleRate));
-  const frameCount = Math.max(1, endFrame - startFrame);
-  const channelCount = buffer.numberOfChannels;
-  const bytesPerSample = 2;
-  const dataLength = frameCount * channelCount * bytesPerSample;
-  const wav = new ArrayBuffer(44 + dataLength);
-  const view = new DataView(wav);
-
-  writeAscii(view, 0, "RIFF");
-  view.setUint32(4, 36 + dataLength, true);
-  writeAscii(view, 8, "WAVE");
-  writeAscii(view, 12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, channelCount, true);
-  view.setUint32(24, buffer.sampleRate, true);
-  view.setUint32(28, buffer.sampleRate * channelCount * bytesPerSample, true);
-  view.setUint16(32, channelCount * bytesPerSample, true);
-  view.setUint16(34, 16, true);
-  writeAscii(view, 36, "data");
-  view.setUint32(40, dataLength, true);
-
-  const channels = Array.from({ length: channelCount }, (_, i) => buffer.getChannelData(i));
-  let offset = 44;
-  for (let frame = startFrame; frame < endFrame; frame++) {
-    for (let channel = 0; channel < channelCount; channel++) {
-      const sample = Math.max(-1, Math.min(1, channels[channel][frame] || 0));
-      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-      offset += bytesPerSample;
-    }
-  }
-  return new Blob([wav], { type: "audio/wav" });
-}
-
-async function createConversationWordClip(entry, selection) {
-  if (!entry.audioClipCache) entry.audioClipCache = new Map();
-  const key = audioSelectionKey(selection);
-  if (entry.audioClipCache.has(key)) return entry.audioClipCache.get(key);
-
-  const clipPromise = (async () => {
-    const [words, decoded] = await Promise.all([
-      requestTurnWordTimestamps(entry),
-      decodeTurnAudio(entry),
-    ]);
-    const approximatePosition = selection.start / Math.max(1, entry.text.length);
-    const range = findTimestampRange(words, selection.text, approximatePosition);
-    if (!range) throw new Error("The selected text could not be matched to the recorded speech.");
-    return audioBufferRangeToWav(
-      decoded,
-      Math.max(0, range.start - 0.08),
-      Math.min(decoded.duration, range.end + 0.12)
-    );
-  })();
-
-  entry.audioClipCache.set(key, clipPromise);
-  try {
-    const blob = await clipPromise;
-    entry.audioClipCache.set(key, blob);
-    return blob;
-  } catch (err) {
-    entry.audioClipCache.delete(key);
-    throw err;
-  }
-}
-
-function selectionsForParts(parts) {
-  let offset = 0;
-  return parts.map((text) => {
-    const selection = { text: cleanWord(text), rawText: text, start: offset, end: offset + text.length };
-    offset += text.length;
-    return selection;
-  }).filter((selection) => selection.text);
-}
-
-function prepareRemainingTurnAudio(entry, lineIndex, selectedKey) {
-  if (entry._backgroundAudioScheduled || !entry.audioBlob) return;
-  entry._backgroundAudioScheduled = true;
-  const parts = segmentCache[lineIndex]?.words || naiveSegments(entry.text, entry.lang).words;
-  const queue = selectionsForParts(parts).filter((selection) => audioSelectionKey(selection) !== selectedKey);
-  const runNext = () => {
-    const selection = queue.shift();
-    if (!selection) return;
-    createConversationWordClip(entry, selection)
-      .catch(() => {})
-      .finally(() => {
-        if (typeof requestIdleCallback === "function") requestIdleCallback(runNext, { timeout: 1000 });
-        else setTimeout(runNext, 20);
-      });
-  };
-  if (typeof requestIdleCallback === "function") requestIdleCallback(runNext, { timeout: 1000 });
-  else setTimeout(runNext, 20);
-}
-
 async function synthesizeSelectedWord(word) {
   const settings = loadSettings();
   const resp = await fetch("https://api.openai.com/v1/audio/speech", {
@@ -2274,7 +2127,6 @@ function renderTranscriptReviewBody() {
     bubble.className = `bubble ${entry.role}`;
     const parts = (segmentCache[i] && segmentCache[i][segmentMode]) || [entry.text];
     let seg = 0;
-    let charOffset = 0;
     parts.forEach((part) => {
       const clean = cleanWord(part);
       const span = document.createElement("span");
@@ -2284,14 +2136,11 @@ function renderTranscriptReviewBody() {
         span.dataset.word = clean;
         span.dataset.context = entry.text;
         span.dataset.lineIndex = String(i);
-        span.dataset.start = String(charOffset);
-        span.dataset.end = String(charOffset + part.length);
         seg += 1;
       } else {
         span.className = "word no-select";
       }
       bubble.appendChild(span);
-      charOffset += part.length;
     });
     body.appendChild(bubble);
   });
@@ -2304,13 +2153,7 @@ function markWordAdded(word) {
 $("trBody").addEventListener("click", (e) => {
   const span = e.target.closest(".word");
   if (!span || span.classList.contains("no-select")) return;
-  const lineIndex = Number(span.dataset.lineIndex);
-  openWordModal(span.dataset.word, span.dataset.context, {
-    lineIndex,
-    start: Number(span.dataset.start),
-    end: Number(span.dataset.end),
-    text: span.dataset.word,
-  });
+  openWordModal(span.dataset.word, span.dataset.context);
 });
 
 $("segToggle").addEventListener("click", (e) => {
@@ -2360,37 +2203,17 @@ function setPendingAudioPreview(blob) {
   $("wordAudioField").classList.remove("hidden");
 }
 
-async function prepareSelectedWordAudio(word, selection, generation) {
-  const entry = Number.isInteger(selection?.lineIndex)
-    ? transcriptHistory[selection.lineIndex]
-    : null;
-  if (entry && !entry.audioBlob) {
-    showWordAudioStatus("Finishing the conversation recording…");
-    await waitForTurnAudio(entry);
-  }
-  if (entry?.audioBlob) {
-    try {
-      showWordAudioStatus("Finding this word in the conversation audio…");
-      const blob = await createConversationWordClip(entry, selection);
-      if (generation !== wordAudioGeneration) return;
-      setPendingAudioPreview(blob);
-      showWordAudioStatus("Clipped from the original conversation audio.");
-      prepareRemainingTurnAudio(entry, selection.lineIndex, audioSelectionKey(selection));
-      return;
-    } catch (err) {
-      console.warn("[VoiceCoach] original word audio unavailable; using TTS:", err);
-    }
-  }
-
-  if (generation !== wordAudioGeneration) return;
+// Flashcard audio is always freshly synthesized, never cut from the
+// conversation recording. A clean TTS reading of the word on its own is
+// more useful for practice than a slice of connected speech, and it works
+// identically whether the word came from the user's turn or the coach's.
+async function prepareSelectedWordAudio(word, generation) {
   showWordAudioStatus("Generating a clear pronunciation for this word…");
   try {
     const blob = await synthesizeSelectedWord(word);
     if (generation !== wordAudioGeneration) return;
     setPendingAudioPreview(blob);
-    showWordAudioStatus(entry?.audioBlob
-      ? "Could not align the original recording, so this uses generated pronunciation."
-      : "No conversation recording was available, so this uses generated pronunciation.");
+    showWordAudioStatus("Generated pronunciation for this word.");
   } catch (err) {
     if (generation !== wordAudioGeneration) return;
     console.error("[VoiceCoach] word audio preparation failed:", err);
@@ -2398,7 +2221,149 @@ async function prepareSelectedWordAudio(word, selection, generation) {
   }
 }
 
-async function openWordModal(word, context, selection) {
+/* ---------------------------------------------------------------------- */
+/* "Dive deeper" — a typed chat about what the word means in context      */
+/* ---------------------------------------------------------------------- */
+
+// Turns of the deep-dive conversation for the word currently in the modal.
+// Reset every time the modal opens on a different word.
+let deepDiveMessages = [];
+let deepDiveBusy = false;
+// The language the open card belongs to — the edit path can be a different
+// language than the live session, so don't assume currentSessionLanguage.
+let deepDiveLanguage = "en";
+
+function resetDeepDive(langCode) {
+  deepDiveMessages = [];
+  deepDiveBusy = false;
+  deepDiveLanguage = langCode || currentSessionLanguage;
+  $("deepDiveSection").classList.add("hidden");
+  $("deepDiveToggleBtn").textContent = "Dive deeper into this word";
+  $("deepDiveLog").innerHTML = "";
+  $("deepDiveInput").value = "";
+  $("deepDiveSendBtn").disabled = false;
+}
+
+function appendDeepDiveMessage(role, text) {
+  const el = document.createElement("div");
+  el.className = `dd-msg ${role}`;
+  el.textContent = text;
+  $("deepDiveLog").appendChild(el);
+  $("deepDiveLog").scrollTop = $("deepDiveLog").scrollHeight;
+  return el;
+}
+
+async function sendDeepDiveMessage() {
+  if (deepDiveBusy) return;
+  const question = $("deepDiveInput").value.trim();
+  if (!question) return;
+
+  const word = $("wordInput").value.trim();
+  const context = $("wordContextInput").value.trim();
+  const currentTranslation = $("wordTranslationInput").value.trim();
+  const langName = languageName(deepDiveLanguage);
+
+  deepDiveBusy = true;
+  $("deepDiveSendBtn").disabled = true;
+  $("deepDiveInput").value = "";
+  appendDeepDiveMessage("user", question);
+  const thinkingEl = appendDeepDiveMessage("thinking", "Thinking…");
+
+  deepDiveMessages.push({ role: "user", content: question });
+
+  try {
+    const settings = loadSettings();
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${settings.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content:
+              `You are helping a learner of ${langName} understand one specific ` +
+              `word or phrase deeply.\n\n` +
+              `Word/phrase: ${word}\n` +
+              `Sentence it appeared in: ${context || "(none given)"}\n` +
+              `Current flashcard translation: ${currentTranslation || "(none yet)"}\n\n` +
+              `Answer their questions about nuance, connotation, register, grammar, ` +
+              `and how it's actually used. Be concrete and brief — a few sentences, ` +
+              `not an essay. Use the sentence above as the primary context.\n\n` +
+              `Respond with strict JSON: {"reply": "...", "translation": "...", ` +
+              `"pronunciation": "..."}. "reply" is your message to the learner. ` +
+              `Set "translation" ONLY when the discussion has produced a genuinely ` +
+              `better, more context-accurate flashcard translation than the current ` +
+              `one — otherwise use an empty string. Same for "pronunciation" ` +
+              `(a romanized reading; empty string if it doesn't apply or is unchanged).`,
+          },
+          ...deepDiveMessages,
+        ],
+      }),
+    });
+    if (!resp.ok) throw new Error(`Deep dive request failed (${resp.status})`);
+    const data = await resp.json();
+    let parsed;
+    try {
+      parsed = JSON.parse(data?.choices?.[0]?.message?.content || "{}");
+    } catch (e) {
+      parsed = {};
+    }
+
+    const reply = (parsed.reply || "").trim() || "I couldn't come up with an answer for that.";
+    deepDiveMessages.push({ role: "assistant", content: reply });
+    thinkingEl.remove();
+    appendDeepDiveMessage("ai", reply);
+
+    // Let the conversation improve the card itself, not just explain it.
+    const refined = (parsed.translation || "").trim();
+    if (refined && refined !== currentTranslation) {
+      $("wordTranslationInput").value = refined;
+      appendDeepDiveMessage("ai", `✓ Updated the translation to: ${refined}`);
+    }
+    const refinedPron = (parsed.pronunciation || "").trim();
+    if (refinedPron && refinedPron !== $("wordPronunciationInput").value.trim()) {
+      $("wordPronunciationInput").value = refinedPron;
+    }
+  } catch (err) {
+    console.error("[VoiceCoach] deep dive failed:", err);
+    thinkingEl.remove();
+    appendDeepDiveMessage("ai", "Something went wrong reaching the coach. Try again.");
+  } finally {
+    deepDiveBusy = false;
+    $("deepDiveSendBtn").disabled = false;
+  }
+}
+
+$("deepDiveToggleBtn").addEventListener("click", () => {
+  const section = $("deepDiveSection");
+  const opening = section.classList.contains("hidden");
+  section.classList.toggle("hidden", !opening);
+  $("deepDiveToggleBtn").textContent = opening ? "Hide deeper dive" : "Dive deeper into this word";
+  if (opening) {
+    if (!deepDiveMessages.length) {
+      appendDeepDiveMessage("ai",
+        `Ask me anything about “${$("wordInput").value.trim()}” — what it implies, ` +
+        `when to use it, how it differs from similar words. I'll sharpen the ` +
+        `flashcard translation as we go.`);
+    }
+    $("deepDiveInput").focus();
+  }
+});
+
+$("deepDiveSendBtn").addEventListener("click", sendDeepDiveMessage);
+$("deepDiveInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    sendDeepDiveMessage();
+  }
+});
+
+async function openWordModal(word, context) {
   const generation = ++wordAudioGeneration;
   editingCardId = null;
   $("wordModalTitle").textContent = "Add flashcard";
@@ -2410,6 +2375,7 @@ async function openWordModal(word, context, selection) {
   $("wordPronunciationInput").value = "";
   $("saveWordBtn").disabled = true;
   $("wordModal").classList.remove("hidden");
+  resetDeepDive(currentSessionLanguage);
 
   clearPendingAudioPreview();
   const translationPromise = translateWord(word, context, currentSessionLanguage)
@@ -2423,7 +2389,7 @@ async function openWordModal(word, context, selection) {
       console.error("[VoiceCoach] translateWord failed:", err);
       $("wordTranslationInput").placeholder = "Couldn't auto-translate — type it manually";
     });
-  const audioPromise = prepareSelectedWordAudio(word, selection, generation);
+  const audioPromise = prepareSelectedWordAudio(word, generation);
   await Promise.allSettled([translationPromise, audioPromise]);
   if (generation === wordAudioGeneration) $("saveWordBtn").disabled = false;
 }
@@ -2444,6 +2410,7 @@ async function openEditCardModal(card) {
   $("wordPronunciationInput").value = card.pronunciation || "";
   $("wordContextInput").value = card.context || "";
   $("saveWordBtn").disabled = false;
+  resetDeepDive(card.lang);
   clearPendingAudioPreview();
   $("wordModal").classList.remove("hidden");
 
@@ -2726,7 +2693,137 @@ function openSetup() {
   $("flashcardsScreen").classList.add("hidden");
   $("gearBtn").classList.add("hidden");
   $("tabNav").classList.add("hidden");
+  $("langBar").classList.add("hidden");
+  closeLangMenu();
 }
+
+/* ---------------------------------------------------------------------- */
+/* Language switcher bar                                                  */
+/* ---------------------------------------------------------------------- */
+
+const LANG_ORDER_KEY = "voiceCoach.langOrder";
+const LANG_BAR_SLOTS = 5;
+
+// Most-recently-used language codes, newest first. Persisted separately from
+// the settings blob so switching languages never rewrites the API key.
+function loadLangOrder() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LANG_ORDER_KEY) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((code) => LANGUAGES.some((l) => l.code === code));
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveLangOrder(order) {
+  try {
+    localStorage.setItem(LANG_ORDER_KEY, JSON.stringify(order));
+  } catch (e) {
+    // Storage full or blocked — the bar just falls back to default ordering.
+  }
+}
+
+function noteLanguageUsed(code) {
+  const order = [code, ...loadLangOrder().filter((c) => c !== code)];
+  saveLangOrder(order);
+  return order;
+}
+
+// The bar shows the MRU languages first, then fills any spare slots with
+// whatever hasn't been used yet, so it's never sparse on a fresh install.
+function langBarCodes(activeCode) {
+  const seen = new Set();
+  const ordered = [];
+  [activeCode, ...loadLangOrder()].forEach((code) => {
+    if (!code || seen.has(code)) return;
+    if (!LANGUAGES.some((l) => l.code === code)) return;
+    seen.add(code);
+    ordered.push(code);
+  });
+  LANGUAGES.forEach((l) => {
+    if (!seen.has(l.code)) {
+      seen.add(l.code);
+      ordered.push(l.code);
+    }
+  });
+  return ordered.slice(0, LANG_BAR_SLOTS);
+}
+
+function closeLangMenu() {
+  $("langMenu").classList.add("hidden");
+}
+
+function renderLangBar() {
+  const settings = loadSettings();
+  if (!settings) return;
+  const active = settings.language || "en";
+  const bar = $("langBar");
+  const menu = $("langMenu");
+
+  // Rebuild the buttons but keep the (separately rendered) menu element.
+  Array.from(bar.querySelectorAll(".lang-bar-btn, .lang-more-btn")).forEach((el) => el.remove());
+
+  const shown = langBarCodes(active);
+  shown.forEach((code) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `lang-bar-btn${code === active ? " active" : ""}`;
+    btn.textContent = languageName(code);
+    btn.title = languageName(code);
+    btn.addEventListener("click", () => switchLanguage(code));
+    bar.insertBefore(btn, menu);
+  });
+
+  const more = document.createElement("button");
+  more.type = "button";
+  more.className = "lang-more-btn";
+  more.textContent = "More";
+  more.setAttribute("aria-label", "More languages");
+  more.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const willOpen = menu.classList.contains("hidden");
+    menu.classList.toggle("hidden", !willOpen);
+  });
+  bar.insertBefore(more, menu);
+
+  menu.innerHTML = "";
+  // Every language is listed in the menu (not just the overflow) so the full
+  // set is always reachable from one place.
+  LANGUAGES.forEach((l) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `lang-menu-item${l.code === active ? " active" : ""}`;
+    item.textContent = languageName(l.code);
+    item.addEventListener("click", () => {
+      closeLangMenu();
+      switchLanguage(l.code);
+    });
+    menu.appendChild(item);
+  });
+}
+
+// Switching language is the same contract as changing it in settings: the
+// live conversation ends and the transcript clears, so a session never
+// straddles two languages.
+function switchLanguage(code) {
+  const settings = loadSettings();
+  if (!settings) return;
+  closeLangMenu();
+  if ((settings.language || "en") === code) return;
+
+  saveSettings({ ...settings, language: code });
+  noteLanguageUsed(code);
+  endSession();
+  clearTranscript();
+  renderLangBar();
+}
+
+document.addEventListener("click", (e) => {
+  if ($("langMenu").classList.contains("hidden")) return;
+  if (e.target.closest("#langMenu") || e.target.closest(".lang-more-btn")) return;
+  closeLangMenu();
+});
 
 function switchTab(tab) {
   $("tabCoachBtn").classList.toggle("active", tab === "coach");
@@ -2740,6 +2837,8 @@ function openMain() {
   $("setupScreen").classList.add("hidden");
   $("gearBtn").classList.remove("hidden");
   $("tabNav").classList.remove("hidden");
+  $("langBar").classList.remove("hidden");
+  renderLangBar();
   switchTab("coach");
   updateDueBadge();
   setState("idle");
@@ -2799,6 +2898,7 @@ $("saveSetupBtn").addEventListener("click", () => {
     instructions: $("instructionsInput").value.trim(),
     model: $("modelInput").value.trim() || "gpt-realtime",
   });
+  noteLanguageUsed($("languageSelect").value);
   openMain();
 });
 
@@ -2809,6 +2909,8 @@ $("orbBtn").addEventListener("click", () => {
     handleOrbTap();
   }
 });
+
+$("englishHelpBtn").addEventListener("click", () => setEnglishAssist(!englishAssist));
 
 $("endSessionBtn").addEventListener("click", () => {
   // Preserve displayed deltas when the final transcript event has not arrived.
@@ -2854,9 +2956,11 @@ $("saveSettingsBtn").addEventListener("click", () => {
   // Switching languages mid-conversation would leave a half-foreign,
   // half-new-language transcript behind, so start clean instead.
   if (previousLanguage && newLanguage !== previousLanguage) {
+    noteLanguageUsed(newLanguage);
     endSession();
     clearTranscript();
   }
+  renderLangBar();
   $("settingsModal").classList.add("hidden");
 });
 
