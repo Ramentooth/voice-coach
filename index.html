@@ -436,6 +436,32 @@
     flex-direction:column;
     gap:8px;
   }
+  .fc-folder{ display:flex; flex-direction:column; gap:8px; }
+  .fc-folder-header{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    background:none;
+    border:none;
+    padding:4px 2px;
+    cursor:pointer;
+    color:var(--fg);
+    font:inherit;
+    text-align:left;
+    width:100%;
+  }
+  .fc-folder-chevron{
+    flex-shrink:0;
+    width:14px;
+    height:14px;
+    transition:transform .15s;
+    color:var(--dim);
+  }
+  .fc-folder.collapsed .fc-folder-chevron{ transform:rotate(-90deg); }
+  .fc-folder-name{ font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; }
+  .fc-folder-count{ font-size:12px; color:var(--dim); margin-left:auto; }
+  .fc-folder-rows{ display:flex; flex-direction:column; gap:8px; }
+  .fc-folder.collapsed .fc-folder-rows{ display:none; }
   .fc-row{
     display:flex;
     align-items:center;
@@ -1036,6 +1062,7 @@ async function analyzeTranscriptSegments(lines, langCode) {
     body: JSON.stringify({
       model: "gpt-4o-mini",
       temperature: 0,
+      response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
@@ -1047,10 +1074,12 @@ async function analyzeTranscriptSegments(lines, langCode) {
             `where you must split by actual words, not by character. Also insert the ` +
             `marker "${PHRASE_DELIM}" between every meaningful phrase chunk (roughly ` +
             `2-6 words each, grouping related words together, e.g. a verb phrase or ` +
-            `noun phrase). Do not add, remove, translate, or reorder any characters — ` +
+            `noun phrase). Do not add, remove, translate, reorder, or otherwise alter a ` +
+            `single character of the input — including whitespace and punctuation — ` +
             `only insert the two marker characters at boundaries. Respond with strict ` +
-            `JSON only: an array, same length and order as the input, where each ` +
-            `element is {"words": "...", "phrases": "..."}.`,
+            `JSON only: {"segments": [...]}, where "segments" has exactly ${lines.length} ` +
+            `elements in the same order as the input, one per input line, each ` +
+            `{"words": "...", "phrases": "..."}.`,
         },
         { role: "user", content: JSON.stringify(lines) },
       ],
@@ -1058,13 +1087,20 @@ async function analyzeTranscriptSegments(lines, langCode) {
   });
   if (!resp.ok) throw new Error(`Segmentation request failed (${resp.status})`);
   const data = await resp.json();
-  const raw = data?.choices?.[0]?.message?.content || "";
-  const jsonStr = raw.slice(raw.indexOf("["), raw.lastIndexOf("]") + 1);
-  const parsed = JSON.parse(jsonStr);
-  if (!Array.isArray(parsed) || parsed.length !== lines.length) {
-    throw new Error("Segmentation response shape mismatch");
+  const raw = data?.choices?.[0]?.message?.content || "{}";
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error("Segmentation response was not valid JSON");
   }
-  return parsed;
+  const segments = Array.isArray(parsed?.segments) ? parsed.segments : [];
+  // Align to the input by index rather than rejecting the whole batch on a
+  // length mismatch — one line the model merged/split differently shouldn't
+  // sacrifice every other line's segmentation. A missing/extra entry just
+  // falls back to naive segmentation for that one line (see splitMarked()
+  // callers), instead of the entire transcript falling back to naive.
+  return lines.map((_, i) => segments[i] || {});
 }
 
 function loadSettings() {
@@ -1321,9 +1357,15 @@ let localRecorderChunks = [];
 
 // Realtime mode's assistant audio only exists as a live WebRTC media track
 // (WebRTC transport doesn't send audio as data-channel events); we record
-// what's actually being played back via captureStream() to get a clip.
+// straight off that track to get a clip.
 let assistantRecorder = null;
 let assistantRecorderChunks = [];
+// The raw remote MediaStream from pc.ontrack, kept around so
+// startAssistantCapture() can record it directly. Deliberately NOT using
+// audioEl.captureStream() here — that API has no Safari/iOS support at all,
+// which silently dropped every assistant clip on those browsers. Recording
+// the RTCPeerConnection's own track works everywhere MediaRecorder does.
+let remoteStream = null;
 
 function startLocalRecording() {
   if (!localStream) return;
@@ -1357,14 +1399,13 @@ function stopLocalRecording(role) {
 
 function startAssistantCapture() {
   if (assistantRecorder) return; // already capturing this response
+  if (!remoteStream) return; // track hasn't arrived yet — nothing to record
   try {
-    const audioEl = $("remoteAudio");
-    if (!audioEl.captureStream) return; // unsupported browser — degrade gracefully, no clip
     assistantRecorderChunks = [];
     const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))
       ? "audio/webm;codecs=opus"
       : "audio/webm";
-    assistantRecorder = new MediaRecorder(audioEl.captureStream(), { mimeType });
+    assistantRecorder = new MediaRecorder(remoteStream, { mimeType });
     assistantRecorder.addEventListener("dataavailable", (e) => {
       if (e.data && e.data.size) assistantRecorderChunks.push(e.data);
     });
@@ -1465,6 +1506,7 @@ async function startRealtimeSession(settings) {
   pc.ontrack = (event) => {
     const audioEl = $("remoteAudio");
     audioEl.srcObject = event.streams[0];
+    remoteStream = event.streams[0];
   };
 
   localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
@@ -1775,6 +1817,7 @@ function endSession(silent) {
   dc = null;
   pc = null;
   localStream = null;
+  remoteStream = null;
   mediaRecorder = null;
   localRecorder = null;
   assistantRecorder = null;
@@ -2014,6 +2057,11 @@ function updateDueBadge() {
   badge.classList.toggle("hidden", n === 0);
 }
 
+// Which language folders are collapsed, keyed by language code — kept
+// outside renderFlashcardsScreen() so the fold state survives re-renders
+// (deleting a card, playing audio, finishing a review, etc all re-render).
+let collapsedFolders = new Set();
+
 function renderFlashcardsScreen() {
   const cards = loadFlashcards();
   const due = dueCount(cards);
@@ -2028,27 +2076,60 @@ function renderFlashcardsScreen() {
     return;
   }
   const today = todayStr(0);
-  cards
-    .slice()
-    .sort((a, b) => a.due.localeCompare(b.due))
-    .forEach((card) => {
-      const row = document.createElement("div");
-      row.className = "fc-row";
-      const isDue = card.due <= today;
-      row.innerHTML = `
-        <div class="fc-row-main">
-          <div class="fc-word">${escapeHtml(card.word)}</div>
-          ${card.pronunciation ? `<div class="fc-pronunciation">${escapeHtml(card.pronunciation)}</div>` : ""}
-          <div class="fc-translation">${escapeHtml(card.translation)}</div>
-        </div>
-        ${card.hasAudio ? `
-        <button class="play-btn fc-play" data-id="${card.id}" aria-label="Play audio" title="Play audio">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-        </button>` : ""}
-        <div class="fc-due${isDue ? " is-due" : ""}">${isDue ? "Due" : card.due}</div>
-        <button class="fc-delete" data-id="${card.id}" aria-label="Delete flashcard">✕</button>
+
+  const byLang = new Map();
+  cards.forEach((card) => {
+    const lang = card.lang || "en";
+    if (!byLang.has(lang)) byLang.set(lang, []);
+    byLang.get(lang).push(card);
+  });
+
+  Array.from(byLang.keys())
+    .sort((a, b) => languageName(a).localeCompare(languageName(b)))
+    .forEach((lang) => {
+      const langCards = byLang.get(lang).slice().sort((a, b) => a.due.localeCompare(b.due));
+      const langDue = langCards.filter((c) => c.due <= today).length;
+
+      const folder = document.createElement("div");
+      folder.className = `fc-folder${collapsedFolders.has(lang) ? " collapsed" : ""}`;
+
+      const header = document.createElement("button");
+      header.type = "button";
+      header.className = "fc-folder-header";
+      header.innerHTML = `
+        <svg class="fc-folder-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+        <span class="fc-folder-name">${escapeHtml(languageName(lang))}</span>
+        <span class="fc-folder-count">${langDue ? `${langDue} due · ` : ""}${langCards.length}</span>
       `;
-      listEl.appendChild(row);
+      header.addEventListener("click", () => {
+        if (collapsedFolders.has(lang)) collapsedFolders.delete(lang); else collapsedFolders.add(lang);
+        folder.classList.toggle("collapsed");
+      });
+      folder.appendChild(header);
+
+      const rows = document.createElement("div");
+      rows.className = "fc-folder-rows";
+      langCards.forEach((card) => {
+        const row = document.createElement("div");
+        row.className = "fc-row";
+        const isDue = card.due <= today;
+        row.innerHTML = `
+          <div class="fc-row-main">
+            <div class="fc-word">${escapeHtml(card.word)}</div>
+            ${card.pronunciation ? `<div class="fc-pronunciation">${escapeHtml(card.pronunciation)}</div>` : ""}
+            <div class="fc-translation">${escapeHtml(card.translation)}</div>
+          </div>
+          ${card.hasAudio ? `
+          <button class="play-btn fc-play" data-id="${card.id}" aria-label="Play audio" title="Play audio">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>` : ""}
+          <div class="fc-due${isDue ? " is-due" : ""}">${isDue ? "Due" : card.due}</div>
+          <button class="fc-delete" data-id="${card.id}" aria-label="Delete flashcard">✕</button>
+        `;
+        rows.appendChild(row);
+      });
+      folder.appendChild(rows);
+      listEl.appendChild(folder);
     });
 }
 
@@ -2267,15 +2348,23 @@ $("saveSettingsBtn").addEventListener("click", () => {
     alert("That doesn't look like a valid OpenAI API key.");
     return;
   }
+  const previousLanguage = (loadSettings() || {}).language;
+  const newLanguage = $("s_languageSelect").value;
   saveSettings({
     apiKey,
-    language: $("s_languageSelect").value,
+    language: newLanguage,
     mode: activeMode($("s_modeToggle")),
     voice: $("s_voiceSelect").value,
     economyVoice: $("s_economyVoiceSelect").value,
     instructions: $("s_instructionsInput").value.trim(),
     model: $("s_modelInput").value.trim() || "gpt-realtime",
   });
+  // Switching languages mid-conversation would leave a half-foreign,
+  // half-new-language transcript behind, so start clean instead.
+  if (previousLanguage && newLanguage !== previousLanguage) {
+    endSession();
+    clearTranscript();
+  }
   $("settingsModal").classList.add("hidden");
 });
 
