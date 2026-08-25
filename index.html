@@ -447,6 +447,7 @@
   }
   .fc-row-main{ flex:1; min-width:0; }
   .fc-word{ font-size:14px; font-weight:600; }
+  .fc-pronunciation{ font-size:11px; color:var(--accent2); margin-top:1px; font-style:italic; }
   .fc-translation{ font-size:12px; color:var(--dim); margin-top:2px; }
   .fc-due{ font-size:11px; color:var(--dim); white-space:nowrap; }
   .fc-due.is-due{ color:var(--fg); font-weight:700; }
@@ -455,9 +456,45 @@
     cursor:pointer; font-size:14px; padding:4px 6px; line-height:1;
   }
   .fc-delete:hover{ color:var(--danger); }
+  .play-btn{
+    flex-shrink:0;
+    width:30px;
+    height:30px;
+    border-radius:50%;
+    border:1px solid var(--border);
+    background:transparent;
+    color:var(--fg);
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .play-btn svg{ width:13px; height:13px; margin-left:1px; }
+  .play-btn:hover{ border-color:var(--accent); }
+  .play-btn:disabled{ opacity:.35; cursor:not-allowed; }
 
   /* ---------- transcript review (word/phrase picking) ---------- */
   .transcript-review-modal{ max-width:480px; }
+  .spinner{
+    width:13px; height:13px;
+    border:2px solid var(--border);
+    border-top-color:var(--fg);
+    border-radius:50%;
+    display:inline-block;
+    vertical-align:middle;
+    margin-right:8px;
+    animation:spin .8s linear infinite;
+    flex-shrink:0;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .tr-analyzing{
+    display:flex;
+    align-items:center;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:10px 12px;
+  }
   .tr-body{
     max-height:45vh;
     overflow-y:auto;
@@ -465,7 +502,9 @@
     display:flex;
     flex-direction:column;
     gap:8px;
+    transition:opacity .2s;
   }
+  .tr-body.analyzing{ opacity:.35; pointer-events:none; }
   .tr-body .bubble{ max-width:100%; }
   /* Each word/phrase gets its own inline-block box with a small side margin
      so adjacent underlines stay visually separated even with zero
@@ -489,8 +528,10 @@
   /* ---------- flashcard review session ---------- */
   .review-modal{ align-items:center; text-align:center; }
   .review-progress{ font-size:12px; color:var(--dim); }
-  .review-card{ padding:20px 0; }
+  .review-card{ padding:20px 0; display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .review-word-row{ display:flex; align-items:center; gap:10px; }
   .review-word{ font-size:26px; font-weight:700; }
+  .review-pronunciation{ font-size:13px; color:var(--accent2); font-style:italic; margin-top:2px; }
   .review-context{ font-size:13px; color:var(--dim); margin-top:10px; }
   .review-translation{ font-size:16px; margin-top:14px; color:var(--accent2); }
   .review-grades{ display:flex; gap:8px; }
@@ -610,11 +651,14 @@
       <div class="orb-wrap">
         <div class="orb-ring"></div>
         <button class="orb" id="orbBtn" aria-label="Start talking">
-          <!-- mic icon -->
+          <!-- crossed-out mic icon: shown whenever we are NOT actively
+               recording (idle/connecting/ready/thinking/speaking/error), so
+               it's always visually obvious the app isn't picking anything up -->
           <svg id="orbIconMic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
             <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/>
             <path d="M19 11a7 7 0 0 1-14 0"/>
             <path d="M12 18v3"/>
+            <line x1="4" y1="4" x2="20" y2="20"/>
           </svg>
           <!-- stop icon -->
           <svg id="orbIconStop" class="hidden" viewBox="0 0 24 24" fill="currentColor">
@@ -663,6 +707,7 @@
   </div>
 
   <audio id="remoteAudio" autoplay playsinline></audio>
+  <audio id="cardAudioPlayer" playsinline></audio>
 </div>
 
 <!-- ============ TRANSCRIPT REVIEW MODAL (after ending a session) ============ -->
@@ -674,7 +719,7 @@
       <button type="button" class="pill-toggle-btn active" data-seg="words">Words</button>
       <button type="button" class="pill-toggle-btn" data-seg="phrases">Phrases</button>
     </div>
-    <p class="hint" id="trAnalyzing">Analyzing transcript for word/phrase boundaries…</p>
+    <p class="tr-analyzing hidden" id="trAnalyzing"><span class="spinner"></span>Analyzing transcript for word/phrase boundaries…</p>
     <div class="tr-body" id="trBody"></div>
     <div class="modal-actions">
       <button class="btn btn-primary" id="closeTranscriptReviewBtn" style="flex:1;">Done</button>
@@ -695,8 +740,16 @@
       <input type="text" id="wordTranslationInput" spellcheck="false" placeholder="Translating…" />
     </div>
     <div class="field">
+      <label for="wordPronunciationInput">Pronunciation (optional)</label>
+      <input type="text" id="wordPronunciationInput" spellcheck="false" placeholder="e.g. pinyin or romaji" />
+    </div>
+    <div class="field">
       <label for="wordContextInput">Context</label>
       <textarea id="wordContextInput" spellcheck="false" style="min-height:60px;"></textarea>
+    </div>
+    <div class="field hidden" id="wordAudioField">
+      <label>Audio clip</label>
+      <audio id="wordAudioPreview" controls style="width:100%; height:36px;"></audio>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="cancelWordBtn">Cancel</button>
@@ -710,7 +763,13 @@
   <div class="modal review-modal">
     <div class="review-progress" id="reviewProgress">1 / 1</div>
     <div class="review-card">
-      <div class="review-word" id="reviewWord"></div>
+      <div class="review-word-row">
+        <div class="review-word" id="reviewWord"></div>
+        <button class="play-btn hidden" id="reviewPlayBtn" aria-label="Play audio" title="Play audio">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+      </div>
+      <div class="review-pronunciation hidden" id="reviewPronunciation"></div>
       <div class="review-context hidden" id="reviewContext"></div>
       <div class="review-translation hidden" id="reviewTranslation"></div>
     </div>
@@ -893,11 +952,25 @@ function buildInstructions(settings) {
   return settings.instructions ? `${lock}\n\n${settings.instructions}` : lock;
 }
 
+// Languages whose script isn't easily sounded out by a Latin-alphabet
+// reader — worth a romanized pronunciation guide on the flashcard.
+const NEEDS_PRONUNCIATION = ["ja", "zh", "ko"];
+
+function pronunciationSystemForLanguage(langCode) {
+  if (langCode === "zh") return "Hanyu Pinyin with tone marks";
+  if (langCode === "ja") return "romaji";
+  if (langCode === "ko") return "revised romanization";
+  return "";
+}
+
 // One-off text completion (not the realtime session) to translate a single
 // selected word/phrase into English, using its source sentence for context.
+// Also asks for a romanized pronunciation guide for scripts a foreigner
+// can't easily sound out (kanji/kana, hanzi, hangul).
 async function translateWord(word, context, langCode) {
   const settings = loadSettings();
   const sourceLang = languageName(langCode);
+  const needsPronunciation = NEEDS_PRONUNCIATION.includes(langCode);
   const resp = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -907,13 +980,21 @@ async function translateWord(word, context, langCode) {
     body: JSON.stringify({
       model: "gpt-4o-mini",
       temperature: 0,
+      response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
-          content: `You translate a single ${sourceLang} word or short phrase into ` +
-            `English, using the given sentence for context. If the word is already ` +
-            `English, give a brief one-line definition instead. Reply with only the ` +
-            `translation or definition — no quotes, no explanation, no extra punctuation.`,
+          content:
+            `You help a language learner. Given a ${sourceLang} word or short phrase ` +
+            `and its source sentence for context, respond with strict JSON: ` +
+            `{"translation": "...", "pronunciation": "..."}. "translation" is the ` +
+            `English translation — or, if the word is already English, a brief ` +
+            `one-line definition instead. ` +
+            (needsPronunciation
+              ? `"pronunciation" must be the ${pronunciationSystemForLanguage(langCode)} ` +
+                `reading of the word — this matters since the script isn't easily read by foreigners.`
+              : `Set "pronunciation" to an empty string, since ${sourceLang} already uses a familiar script.`) +
+            ` No extra text outside the JSON object.`,
         },
         { role: "user", content: `Sentence: ${context}\nWord: ${word}` },
       ],
@@ -921,7 +1002,16 @@ async function translateWord(word, context, langCode) {
   });
   if (!resp.ok) throw new Error(`Translation request failed (${resp.status})`);
   const data = await resp.json();
-  return (data?.choices?.[0]?.message?.content || "").trim();
+  let parsed;
+  try {
+    parsed = JSON.parse(data?.choices?.[0]?.message?.content || "{}");
+  } catch (e) {
+    parsed = {};
+  }
+  return {
+    translation: (parsed.translation || "").trim(),
+    pronunciation: (parsed.pronunciation || "").trim(),
+  };
 }
 
 // Markers the segmentation prompt inserts at boundaries — chosen to be
@@ -1014,6 +1104,58 @@ function loadFlashcards() {
 
 function saveFlashcards(cards) {
   localStorage.setItem(FLASHCARDS_KEY, JSON.stringify(cards));
+}
+
+// ---- Audio clips live in IndexedDB, not localStorage --------------------
+// Blobs can't be JSON-serialized, and localStorage's ~5-10MB quota would
+// fill up fast once base64-inflated audio piles up across many cards.
+// IndexedDB stores raw blobs directly and has a far larger quota. Each
+// flashcard only carries a `hasAudio` flag + its own id as the lookup key.
+
+const AUDIO_DB_NAME = "voiceCoachAudio";
+const AUDIO_STORE = "clips";
+let audioDbPromise = null;
+
+function openAudioDb() {
+  if (!audioDbPromise) {
+    audioDbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(AUDIO_DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(AUDIO_STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  return audioDbPromise;
+}
+
+async function saveAudioClip(id, blob) {
+  const db = await openAudioDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AUDIO_STORE, "readwrite");
+    tx.objectStore(AUDIO_STORE).put(blob, id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function loadAudioClip(id) {
+  const db = await openAudioDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AUDIO_STORE, "readonly");
+    const req = tx.objectStore(AUDIO_STORE).get(id);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function deleteAudioClip(id) {
+  const db = await openAudioDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AUDIO_STORE, "readwrite");
+    tx.objectStore(AUDIO_STORE).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 function dueCount(cards) {
@@ -1125,7 +1267,7 @@ function setTranscriptFinal(role, text) {
   if (bubble) {
     const finalText = bubble.textContent.trim();
     if (finalText) {
-      transcriptHistory.push({ role, text: finalText });
+      transcriptHistory.push({ role, text: finalText, audioBlob: bubble._audioBlob || null });
     } else {
       // Reserved slot (see input_audio_buffer.speech_started) that never got
       // any transcript text — drop the empty bubble instead of leaving a gap.
@@ -1139,6 +1281,26 @@ function setTranscriptFinal(role, text) {
   transcriptScrollToBottom();
 }
 
+// Attaches a captured audio clip to a turn. Audio can arrive either before
+// or after that turn's transcript text finalizes (order isn't guaranteed in
+// either mode), so this handles both: if the bubble is still open, stash the
+// blob on it for setTranscriptFinal() to pick up; if it already finalized,
+// find the most recent transcriptHistory entry for that role and attach it
+// there directly.
+function attachAudio(role, blob) {
+  const bubble = role === "user" ? userBubbleEl : assistantBubbleEl;
+  if (bubble) {
+    bubble._audioBlob = blob;
+    return;
+  }
+  for (let i = transcriptHistory.length - 1; i >= 0; i--) {
+    if (transcriptHistory[i].role === role) {
+      transcriptHistory[i].audioBlob = blob;
+      return;
+    }
+  }
+}
+
 /* ---------------------------------------------------------------------- */
 /* Session (WebRTC) management                                            */
 /* ---------------------------------------------------------------------- */
@@ -1150,6 +1312,80 @@ let currentMode = MODE_ECONOMY;
 let mediaRecorder = null;   // MediaRecorder (economy mode)
 let recordedChunks = [];    // audio chunks for the in-progress recording (economy mode)
 let economyMessages = [];   // chat history sent to /v1/chat/completions (economy mode)
+
+// Local recording of the user's own mic, purely for flashcard playback —
+// realtime mode ships audio straight to OpenAI over the RTC track, so
+// without this we'd have no clip of what the user actually said.
+let localRecorder = null;
+let localRecorderChunks = [];
+
+// Realtime mode's assistant audio only exists as a live WebRTC media track
+// (WebRTC transport doesn't send audio as data-channel events); we record
+// what's actually being played back via captureStream() to get a clip.
+let assistantRecorder = null;
+let assistantRecorderChunks = [];
+
+function startLocalRecording() {
+  if (!localStream) return;
+  try {
+    localRecorderChunks = [];
+    const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))
+      ? "audio/webm;codecs=opus"
+      : "audio/webm";
+    localRecorder = new MediaRecorder(localStream, { mimeType });
+    localRecorder.addEventListener("dataavailable", (e) => {
+      if (e.data && e.data.size) localRecorderChunks.push(e.data);
+    });
+    localRecorder.start();
+  } catch (e) {
+    console.error("[VoiceCoach] local audio capture failed:", e);
+    localRecorder = null;
+  }
+}
+
+function stopLocalRecording(role) {
+  if (!localRecorder || localRecorder.state === "inactive") return;
+  const recorder = localRecorder;
+  localRecorder = null;
+  const stopped = new Promise((resolve) => recorder.addEventListener("stop", resolve, { once: true }));
+  recorder.stop();
+  stopped.then(() => {
+    const blob = new Blob(localRecorderChunks, { type: recorder.mimeType || "audio/webm" });
+    if (blob.size) attachAudio(role, blob);
+  });
+}
+
+function startAssistantCapture() {
+  if (assistantRecorder) return; // already capturing this response
+  try {
+    const audioEl = $("remoteAudio");
+    if (!audioEl.captureStream) return; // unsupported browser — degrade gracefully, no clip
+    assistantRecorderChunks = [];
+    const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus"))
+      ? "audio/webm;codecs=opus"
+      : "audio/webm";
+    assistantRecorder = new MediaRecorder(audioEl.captureStream(), { mimeType });
+    assistantRecorder.addEventListener("dataavailable", (e) => {
+      if (e.data && e.data.size) assistantRecorderChunks.push(e.data);
+    });
+    assistantRecorder.start();
+  } catch (e) {
+    console.error("[VoiceCoach] assistant audio capture failed:", e);
+    assistantRecorder = null;
+  }
+}
+
+function stopAssistantCapture() {
+  if (!assistantRecorder || assistantRecorder.state === "inactive") return;
+  const recorder = assistantRecorder;
+  assistantRecorder = null;
+  const stopped = new Promise((resolve) => recorder.addEventListener("stop", resolve, { once: true }));
+  recorder.stop();
+  stopped.then(() => {
+    const blob = new Blob(assistantRecorderChunks, { type: recorder.mimeType || "audio/webm" });
+    if (blob.size) attachAudio("assistant", blob);
+  });
+}
 
 async function startSession() {
   const settings = loadSettings();
@@ -1292,12 +1528,14 @@ function realtimeBeginRecording() {
   dc.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
   bubbleFor("user"); // reserve the DOM slot now, before any transcript text arrives
   localStream.getTracks().forEach((t) => { t.enabled = true; });
+  startLocalRecording(); // separate local capture, purely for flashcard playback
   setState("user_speaking");
 }
 
 function realtimeStopRecording() {
   if (!dc || !localStream) return;
   localStream.getTracks().forEach((t) => { t.enabled = false; });
+  stopLocalRecording("user");
   dc.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
   dc.send(JSON.stringify({ type: "response.create" }));
   setState("thinking");
@@ -1329,6 +1567,7 @@ function handleRealtimeEvent(event) {
       break;
     case "output_audio_buffer.started":
     case "response.audio.delta":
+      startAssistantCapture();
       setState("assistant_speaking");
       break;
     case "response.output_audio_transcript.delta":
@@ -1340,6 +1579,7 @@ function handleRealtimeEvent(event) {
       break;
     case "output_audio_buffer.stopped":
     case "response.done":
+      stopAssistantCapture();
       setTranscriptFinal("assistant"); // safety net if the .done transcript event above didn't fire
       setState("ready");
       break;
@@ -1402,6 +1642,7 @@ async function processEconomyTurn(mimeType) {
       setState("ready");
       return;
     }
+    attachAudio("user", blob);
     const settings = loadSettings();
 
     const userText = await economyTranscribe(blob, settings);
@@ -1417,8 +1658,9 @@ async function processEconomyTurn(mimeType) {
     setTranscriptFinal("assistant", replyText);
 
     setState("assistant_speaking");
-    const audioUrl = await economySpeak(replyText, settings);
-    await playEconomyAudio(audioUrl);
+    const speech = await economySpeak(replyText, settings);
+    attachAudio("assistant", speech.blob);
+    await playEconomyAudio(speech.url);
 
     if (currentState === "assistant_speaking") setState("ready");
   } catch (err) {
@@ -1483,7 +1725,7 @@ async function economySpeak(text, settings) {
     throw new Error(`Speech synthesis failed (${resp.status}). ${text2.slice(0, 200)}`);
   }
   const blob = await resp.blob();
-  return URL.createObjectURL(blob);
+  return { blob, url: URL.createObjectURL(blob) };
 }
 
 function playEconomyAudio(url) {
@@ -1524,6 +1766,8 @@ function endSession(silent) {
   try { dc && dc.close(); } catch (e) {}
   try { pc && pc.close(); } catch (e) {}
   try { mediaRecorder && mediaRecorder.state !== "inactive" && mediaRecorder.stop(); } catch (e) {}
+  try { localRecorder && localRecorder.state !== "inactive" && localRecorder.stop(); } catch (e) {}
+  try { assistantRecorder && assistantRecorder.state !== "inactive" && assistantRecorder.stop(); } catch (e) {}
   try { $("remoteAudio").pause(); } catch (e) {}
   try {
     if (localStream) localStream.getTracks().forEach((t) => t.stop());
@@ -1532,6 +1776,8 @@ function endSession(silent) {
   pc = null;
   localStream = null;
   mediaRecorder = null;
+  localRecorder = null;
+  assistantRecorder = null;
   if (!silent) setState("idle");
 }
 
@@ -1595,6 +1841,7 @@ async function openTranscriptReview() {
   segmentCache = transcriptHistory.map((e) => naiveSegments(e.text));
   renderTranscriptReviewBody();
   $("trAnalyzing").classList.remove("hidden");
+  $("trBody").classList.add("analyzing");
 
   try {
     const analyzed = await analyzeTranscriptSegments(
@@ -1614,6 +1861,7 @@ async function openTranscriptReview() {
     console.error("[VoiceCoach] transcript analysis failed, using naive segmentation:", err);
   } finally {
     $("trAnalyzing").classList.add("hidden");
+    $("trBody").classList.remove("analyzing");
     renderTranscriptReviewBody();
   }
 }
@@ -1634,6 +1882,7 @@ function renderTranscriptReviewBody() {
         span.className = `word ${seg % 2 === 0 ? "seg-a" : "seg-b"}`;
         span.dataset.word = clean;
         span.dataset.context = entry.text;
+        span.dataset.lineIndex = String(i);
         seg += 1;
       } else {
         span.className = "word no-select";
@@ -1651,7 +1900,9 @@ function markWordAdded(word) {
 $("trBody").addEventListener("click", (e) => {
   const span = e.target.closest(".word");
   if (!span || span.classList.contains("no-select")) return;
-  openWordModal(span.dataset.word, span.dataset.context);
+  const lineIndex = Number(span.dataset.lineIndex);
+  const audioBlob = transcriptHistory[lineIndex]?.audioBlob || null;
+  openWordModal(span.dataset.word, span.dataset.context, audioBlob);
 });
 
 $("segToggle").addEventListener("click", (e) => {
@@ -1666,16 +1917,41 @@ $("closeTranscriptReviewBtn").addEventListener("click", () => {
   $("transcriptReviewModal").classList.add("hidden");
 });
 
-async function openWordModal(word, context) {
+// The audio blob (if any) belonging to the word currently open in the
+// add-word modal, plus the object URL used to preview it — tracked so we
+// can persist it on save and revoke it on close either way.
+let pendingAudioBlob = null;
+let pendingAudioUrl = null;
+
+function clearPendingAudioPreview() {
+  if (pendingAudioUrl) URL.revokeObjectURL(pendingAudioUrl);
+  pendingAudioUrl = null;
+  pendingAudioBlob = null;
+  $("wordAudioPreview").src = "";
+  $("wordAudioField").classList.add("hidden");
+}
+
+async function openWordModal(word, context, audioBlob) {
   $("wordInput").value = word;
   $("wordContextInput").value = context;
   $("wordTranslationInput").value = "";
   $("wordTranslationInput").placeholder = "Translating…";
+  $("wordPronunciationInput").value = "";
   $("saveWordBtn").disabled = true;
   $("wordModal").classList.remove("hidden");
 
+  clearPendingAudioPreview();
+  if (audioBlob) {
+    pendingAudioBlob = audioBlob;
+    pendingAudioUrl = URL.createObjectURL(audioBlob);
+    $("wordAudioPreview").src = pendingAudioUrl;
+    $("wordAudioField").classList.remove("hidden");
+  }
+
   try {
-    $("wordTranslationInput").value = await translateWord(word, context, currentSessionLanguage);
+    const result = await translateWord(word, context, currentSessionLanguage);
+    $("wordTranslationInput").value = result.translation;
+    $("wordPronunciationInput").value = result.pronunciation;
   } catch (err) {
     console.error("[VoiceCoach] translateWord failed:", err);
     $("wordTranslationInput").placeholder = "Couldn't auto-translate — type it manually";
@@ -1684,20 +1960,23 @@ async function openWordModal(word, context) {
   }
 }
 
-$("cancelWordBtn").addEventListener("click", () => $("wordModal").classList.add("hidden"));
+$("cancelWordBtn").addEventListener("click", () => {
+  clearPendingAudioPreview();
+  $("wordModal").classList.add("hidden");
+});
 
-$("saveWordBtn").addEventListener("click", () => {
+$("saveWordBtn").addEventListener("click", async () => {
   const word = $("wordInput").value.trim();
   const translation = $("wordTranslationInput").value.trim();
   if (!word || !translation) {
     alert("Both the word and translation are required.");
     return;
   }
-  const cards = loadFlashcards();
-  cards.push({
+  const card = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     word,
     translation,
+    pronunciation: $("wordPronunciationInput").value.trim(),
     context: $("wordContextInput").value.trim(),
     lang: currentSessionLanguage,
     createdAt: Date.now(),
@@ -1705,10 +1984,22 @@ $("saveWordBtn").addEventListener("click", () => {
     interval: 0,
     reps: 0,
     due: todayStr(0),
-  });
+    hasAudio: false,
+  };
+  if (pendingAudioBlob) {
+    try {
+      await saveAudioClip(card.id, pendingAudioBlob);
+      card.hasAudio = true;
+    } catch (err) {
+      console.error("[VoiceCoach] saveAudioClip failed:", err);
+    }
+  }
+  const cards = loadFlashcards();
+  cards.push(card);
   saveFlashcards(cards);
   markWordAdded(word);
   updateDueBadge();
+  clearPendingAudioPreview();
   $("wordModal").classList.add("hidden");
 });
 
@@ -1747,8 +2038,13 @@ function renderFlashcardsScreen() {
       row.innerHTML = `
         <div class="fc-row-main">
           <div class="fc-word">${escapeHtml(card.word)}</div>
+          ${card.pronunciation ? `<div class="fc-pronunciation">${escapeHtml(card.pronunciation)}</div>` : ""}
           <div class="fc-translation">${escapeHtml(card.translation)}</div>
         </div>
+        ${card.hasAudio ? `
+        <button class="play-btn fc-play" data-id="${card.id}" aria-label="Play audio" title="Play audio">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>` : ""}
         <div class="fc-due${isDue ? " is-due" : ""}">${isDue ? "Due" : card.due}</div>
         <button class="fc-delete" data-id="${card.id}" aria-label="Delete flashcard">✕</button>
       `;
@@ -1756,11 +2052,30 @@ function renderFlashcardsScreen() {
     });
 }
 
+async function playCardAudio(id) {
+  try {
+    const blob = await loadAudioClip(id);
+    if (!blob) return;
+    const player = $("cardAudioPlayer");
+    player.src = URL.createObjectURL(blob);
+    await player.play();
+  } catch (err) {
+    console.error("[VoiceCoach] playCardAudio failed:", err);
+  }
+}
+
 $("fcList").addEventListener("click", (e) => {
-  const btn = e.target.closest(".fc-delete");
-  if (!btn) return;
-  saveFlashcards(loadFlashcards().filter((c) => c.id !== btn.dataset.id));
-  renderFlashcardsScreen();
+  const deleteBtn = e.target.closest(".fc-delete");
+  if (deleteBtn) {
+    saveFlashcards(loadFlashcards().filter((c) => c.id !== deleteBtn.dataset.id));
+    deleteAudioClip(deleteBtn.dataset.id).catch(() => {});
+    renderFlashcardsScreen();
+    return;
+  }
+  const playBtn = e.target.closest(".fc-play");
+  if (playBtn) {
+    playCardAudio(playBtn.dataset.id);
+  }
 });
 
 let reviewQueue = [];
@@ -1781,6 +2096,10 @@ function showReviewCard() {
   const card = reviewQueue[reviewIndex];
   $("reviewProgress").textContent = `${reviewIndex + 1} / ${reviewQueue.length}`;
   $("reviewWord").textContent = card.word;
+  $("reviewPlayBtn").classList.toggle("hidden", !card.hasAudio);
+  $("reviewPlayBtn").dataset.id = card.id;
+  $("reviewPronunciation").textContent = card.pronunciation || "";
+  $("reviewPronunciation").classList.toggle("hidden", !card.pronunciation);
   $("reviewContext").textContent = card.context || "";
   $("reviewContext").classList.add("hidden");
   $("reviewTranslation").textContent = card.translation;
@@ -1788,6 +2107,11 @@ function showReviewCard() {
   $("reviewGrades").classList.add("hidden");
   $("revealBtn").classList.remove("hidden");
 }
+
+$("reviewPlayBtn").addEventListener("click", () => {
+  const id = $("reviewPlayBtn").dataset.id;
+  if (id) playCardAudio(id);
+});
 
 $("revealBtn").addEventListener("click", () => {
   $("reviewContext").classList.remove("hidden");
