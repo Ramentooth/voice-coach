@@ -507,6 +507,124 @@
   .icon-btn.active:hover{ color:#0a0b10; }
   .icon-btn .icon-btn-label{ font-size:13px; font-weight:800; letter-spacing:.02em; }
 
+  /* ---------- practice bar (top of the coach screen) ---------- */
+  .practice-bar{
+    flex-shrink:0;
+    width:100%;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:999px;
+    padding:6px 14px 6px 6px;
+    font:inherit;
+    color:var(--dim);
+    cursor:pointer;
+    overflow:hidden;
+    transition:border-color .15s;
+  }
+  .practice-bar:hover{ border-color:var(--accent2); }
+  .practice-chip{
+    min-width:0;
+    flex-shrink:1;
+    background:var(--bg2);
+    border-radius:999px;
+    padding:5px 10px;
+    font-size:12px;
+    font-weight:600;
+    color:var(--fg);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .practice-chip.chip-plain{
+    background:transparent;
+    color:var(--dim);
+    padding-left:2px;
+    padding-right:2px;
+    flex-shrink:0;
+  }
+  .practice-bar-caret{
+    margin-left:auto;
+    flex-shrink:0;
+    font-size:10px;
+    color:var(--dim);
+  }
+
+  /* ---------- difficulty slider ---------- */
+  .level-range{
+    -webkit-appearance:none;
+    appearance:none;
+    width:100%;
+    height:4px;
+    padding:0;
+    border:none;
+    border-radius:999px;
+    background:var(--border);
+    outline:none;
+    cursor:pointer;
+  }
+  .level-range::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    appearance:none;
+    width:22px;
+    height:22px;
+    border:none;
+    border-radius:50%;
+    background:var(--accent);
+    cursor:pointer;
+  }
+  .level-range::-moz-range-thumb{
+    width:22px;
+    height:22px;
+    border:none;
+    border-radius:50%;
+    background:var(--accent);
+    cursor:pointer;
+  }
+  .level-scale{
+    display:flex;
+    justify-content:space-between;
+    margin:8px 0 6px;
+    font-size:11px;
+    color:var(--dim);
+  }
+
+  /* ---------- situation picker ---------- */
+  .scenario-grid{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:8px;
+  }
+  .scenario-card{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:5px;
+    min-height:68px;
+    padding:10px 4px;
+    border:1px solid var(--border);
+    border-radius:12px;
+    background:var(--panel);
+    color:var(--dim);
+    font-family:inherit;
+    font-size:11px;
+    font-weight:600;
+    line-height:1.2;
+    text-align:center;
+    cursor:pointer;
+    transition:color .15s, border-color .15s, background .15s;
+  }
+  .scenario-card .scenario-icon{ font-size:19px; line-height:1; }
+  .scenario-card:hover{ color:var(--fg); border-color:var(--accent2); }
+  .scenario-card.active{
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#0a0b10;
+  }
+
   .hidden{ display:none !important; }
 
   /* settings modal */
@@ -808,6 +926,15 @@
 
   <!-- ============ MAIN SCREEN (orb) ============ -->
   <div class="main hidden" id="mainScreen">
+    <!-- Difficulty / style / situation, adjustable before or during a session.
+         Chips summarise the current setup; tapping opens the practice modal. -->
+    <button class="practice-bar" id="practiceBar" aria-label="Practice setup">
+      <span class="practice-chip" id="chipScenario">Free talk</span>
+      <span class="practice-chip" id="chipLevel">Level 3</span>
+      <span class="practice-chip chip-plain" id="chipStyle">Immersion</span>
+      <span class="practice-bar-caret" aria-hidden="true">▼</span>
+    </button>
+
     <div class="transcript-wrap">
       <div class="transcript" id="transcript">
         <div class="transcript-empty" id="transcriptEmpty">Conversation will appear here.</div>
@@ -979,6 +1106,48 @@
   </div>
 </div>
 
+<!-- ============ PRACTICE SETUP MODAL (difficulty / style / situation) ============ -->
+<div class="modal-backdrop hidden" id="practiceModal">
+  <div class="modal">
+    <h2>Practice setup</h2>
+
+    <div class="field">
+      <label for="levelRange">Difficulty <span class="field-value" id="levelValueLabel"></span></label>
+      <input type="range" id="levelRange" class="level-range" min="1" max="5" step="1" value="3" />
+      <div class="level-scale"><span>A few words</span><span>Native speed</span></div>
+      <div class="hint" id="levelBlurb"></div>
+    </div>
+
+    <div class="field">
+      <label>Coaching style</label>
+      <div class="pill-toggle" id="styleToggle">
+        <button type="button" class="pill-toggle-btn" data-style="immersion">Immersion</button>
+        <button type="button" class="pill-toggle-btn" data-style="guided">Guided</button>
+      </div>
+      <div class="hint" id="styleHint" style="margin-top:6px;"></div>
+    </div>
+
+    <div class="field">
+      <label>Situation</label>
+      <div class="scenario-grid" id="scenarioGrid"></div>
+      <div class="hint" id="scenarioHint" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="field hidden" id="customScenarioField">
+      <label for="customScenarioInput">Describe the situation</label>
+      <textarea id="customScenarioInput" spellcheck="false"
+                placeholder="e.g. I'm returning a jacket I bought last week and I've lost the receipt."></textarea>
+      <div class="hint" style="margin-top:6px;">Say who you're talking to and what you want out of it.</div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="cancelPracticeBtn">Cancel</button>
+      <button class="btn btn-primary" id="savePracticeBtn" style="flex:1;">Save</button>
+    </div>
+    <div class="hint" id="practiceApplyHint"></div>
+  </div>
+</div>
+
 <!-- ============ SETTINGS MODAL (reopen from main screen) ============ -->
 <div class="modal-backdrop hidden" id="settingsModal">
   <div class="modal">
@@ -1124,6 +1293,193 @@ const LANGUAGES = [
   { code: "zh", name: "Chinese" },
 ];
 
+/* ---------------------------------------------------------------------- */
+/* Practice setup: difficulty, coaching style, situation                  */
+/* ---------------------------------------------------------------------- */
+/* All three are prompt-layer features: they compose into the instructions
+   handed to whichever session is running, and can be changed mid-session
+   (see applySessionInstructions). They live in the same settings blob as
+   the API key so they survive a reload.                                   */
+
+// Difficulty is a 1-5 dial. Each level tells the model how to *speak* --
+// sentence length, vocabulary, pace -- not how to grade the learner.
+const DEFAULT_LEVEL = 3;
+const DIFFICULTY_LEVELS = [
+  {
+    level: 1,
+    name: "Starter",
+    blurb: "Two to four words per sentence. Only the most common words.",
+    prompt:
+      "COMPLEXITY - LEVEL 1 of 5 (absolute beginner). Speak in very short sentences of " +
+      "two to four words. Use only the few hundred most common everyday words. One idea " +
+      "per turn, one clause per sentence, present tense wherever possible. Speak slowly, " +
+      "with clear pauses between words. No idioms, no slang, no subordinate clauses. Ask " +
+      "simple questions the learner can answer in one or two words. If they don't " +
+      "understand, say the same sentence again more slowly rather than rephrasing it " +
+      "with new words.",
+  },
+  {
+    level: 2,
+    name: "Beginner",
+    blurb: "Short sentences, everyday words, simple tenses.",
+    prompt:
+      "COMPLEXITY - LEVEL 2 of 5 (beginner). Keep sentences to about four to seven words. " +
+      "Stick to high-frequency everyday vocabulary and the simple present and past tense. " +
+      "One clause per sentence, though you may occasionally join two with 'and' or 'but'. " +
+      "Speak slowly and clearly. Avoid idioms and slang. Ask questions the learner can " +
+      "answer in a short phrase.",
+  },
+  {
+    level: 3,
+    name: "Everyday",
+    blurb: "Natural but compact sentences at a relaxed pace.",
+    prompt:
+      "COMPLEXITY - LEVEL 3 of 5 (everyday). Use natural but compact conversational " +
+      "sentences of roughly eight to twelve words. Everyday vocabulary, with the " +
+      "occasional new word whose meaning is obvious from the context you put it in. Past, " +
+      "present and future tense are all fine. Speak at a relaxed pace, a little slower " +
+      "than you would with a native speaker.",
+  },
+  {
+    level: 4,
+    name: "Confident",
+    blurb: "Full-length sentences, common idioms, natural pace.",
+    prompt:
+      "COMPLEXITY - LEVEL 4 of 5 (confident). Speak in full-length sentences at a natural " +
+      "pace, linking clauses where it is natural to. Use a broad everyday vocabulary " +
+      "including common idioms and set phrases, and shift register between polite and " +
+      "casual the way a native speaker would. Do not simplify your grammar.",
+  },
+  {
+    level: 5,
+    name: "Fluent",
+    blurb: "Exactly how you'd speak to a native. Nothing simplified.",
+    prompt:
+      "COMPLEXITY - LEVEL 5 of 5 (fluent). Speak exactly as you would to a native " +
+      "speaker: full speed, full complexity, long multi-clause sentences, idioms, slang, " +
+      "humour and cultural references. Do not simplify anything and do not slow down.",
+  },
+];
+
+// Coaching style. Immersion is the original behaviour (target language only);
+// guided is a lesson-style call that explains in English and drills a handful
+// of new phrases, the way Duolingo's AI calls do.
+const STYLE_IMMERSION = "immersion";
+const STYLE_GUIDED = "guided";
+const STYLE_HINTS = {
+  immersion: "Target language only. The coach never switches to English — you work it out from context.",
+  guided: "A lesson-style call. The coach explains mostly in English and teaches you a few new phrases, having you say each one back.",
+};
+
+// Situational practice. Each preset is a role-play brief; the coach plays the
+// other person in the scene and (in immersion) never steps out of it.
+const SCENARIO_NONE = "none";
+const SCENARIO_CUSTOM = "custom";
+const SCENARIOS = [
+  { id: SCENARIO_NONE, icon: "💬", name: "Free talk" },
+  {
+    id: "restaurant", icon: "🍽️", name: "Restaurant",
+    blurb: "You walk in, get seated, order drinks and food, and get checked on mid-meal.",
+    role: "a server at a busy neighbourhood restaurant",
+    setting: "The learner has just walked in and you are seating them for a meal.",
+    goal: "Seat them, take a drinks order, talk them through the menu, take their food order, and check back once the food arrives.",
+    opener: "greet them warmly as they come in and ask how many are in their party",
+  },
+  {
+    id: "friends", icon: "🫂", name: "With friends",
+    blurb: "You bump into an old friend at a cafe and catch up over coffee.",
+    role: "an old friend of the learner's who has run into them by chance at a cafe",
+    setting: "You have not seen each other in months and you both have time for a coffee.",
+    goal: "Catch up properly — work, family, what they have been doing, plans for the weekend. Share your own news too, and react to theirs.",
+    opener: "spot them, sound genuinely surprised and pleased, and ask what they have been up to",
+  },
+  {
+    id: "directions", icon: "🧭", name: "Directions",
+    blurb: "You stop someone on the street to find your way somewhere.",
+    role: "a local passer-by on a street corner",
+    setting: "The learner has stopped you to ask for directions. You know this neighbourhood well.",
+    goal: "Work out where they are trying to get to, give them turn-by-turn directions using landmarks, and tell them roughly how long it will take.",
+    opener: "react to being stopped and ask where they are trying to get to",
+  },
+  {
+    id: "shopping", icon: "🛍️", name: "Shopping",
+    blurb: "A shop assistant helps you with sizes, colours and price, then rings you up.",
+    role: "a shop assistant in a clothing store",
+    setting: "The learner has been browsing and you have come over to help.",
+    goal: "Find out what they are looking for, talk about sizes, colours and price, offer alternatives, and take them to the till.",
+    opener: "ask whether they are looking for anything in particular",
+  },
+  {
+    id: "taxi", icon: "🚕", name: "Taxi",
+    blurb: "You get in, give a destination, and make small talk on the way.",
+    role: "a taxi driver",
+    setting: "The learner has just got into the back of your cab.",
+    goal: "Get their destination, confirm the route, make a little small talk on the way, and settle the fare at the end.",
+    opener: "greet them and ask where they are heading",
+  },
+  {
+    id: "hotel", icon: "🏨", name: "Hotel",
+    blurb: "You arrive to check in and sort out your room, breakfast and wifi.",
+    role: "a receptionist at a hotel front desk",
+    setting: "The learner has arrived to check in.",
+    goal: "Take their name and booking, explain breakfast times, wifi and the room number, and answer questions about the area.",
+    opener: "welcome them to the hotel and ask whether they have a reservation",
+  },
+  {
+    id: "doctor", icon: "🩺", name: "Doctor",
+    blurb: "You explain what's bothering you and get advice.",
+    role: "a doctor in a walk-in clinic",
+    setting: "The learner has come in with something bothering them.",
+    goal: "Ask what is wrong, how long it has been going on and what it feels like, then give simple advice and a prescription if it needs one.",
+    opener: "invite them to sit down and ask what has brought them in today",
+  },
+  {
+    id: "interview", icon: "💼", name: "Interview",
+    blurb: "A hiring manager asks about your background and why you want the job.",
+    role: "a hiring manager interviewing the learner for a job",
+    setting: "You are in a meeting room and the interview has just started.",
+    goal: "Ask about their background, why they want the role, a strength and a weakness, and leave room at the end for them to ask you something.",
+    opener: "thank them for coming in and ask them to tell you a little about themselves",
+  },
+  {
+    id: "phone", icon: "📞", name: "Phone call",
+    blurb: "You ring a business and sort something out, with nothing but words to go on.",
+    role: "a receptionist at a business the learner is phoning",
+    setting: "You have just picked up the phone. Neither of you can see the other, so everything has to be handled in words.",
+    goal: "Find out why they are calling, take their details, and either book them in or take a message.",
+    opener: "answer the phone with the business's greeting and ask how you can help",
+  },
+  { id: SCENARIO_CUSTOM, icon: "✨", name: "Custom" },
+];
+
+// Normalizes whatever is in settings into a usable practice config, so a
+// half-written or older settings blob can't break session start.
+function practiceFor(settings) {
+  const s = settings || {};
+  const rawLevel = parseInt(s.level, 10);
+  const level = Math.min(5, Math.max(1, Number.isFinite(rawLevel) ? rawLevel : DEFAULT_LEVEL));
+  const style = s.style === STYLE_GUIDED ? STYLE_GUIDED : STYLE_IMMERSION;
+  const scenario = SCENARIOS.find((x) => x.id === s.scenario) || SCENARIOS[0];
+  return { level, style, scenario, customScenario: (s.customScenario || "").trim() };
+}
+
+// The role-play brief to build a prompt from, or null when there is no scene.
+// A Custom scenario with an empty description is treated as no scene at all.
+function scenarioBrief(practice) {
+  const sc = practice.scenario;
+  if (!sc || sc.id === SCENARIO_NONE) return null;
+  if (sc.id !== SCENARIO_CUSTOM) return sc;
+  if (!practice.customScenario) return null;
+  return {
+    id: SCENARIO_CUSTOM,
+    name: "the situation the learner described",
+    role: "the other person in the situation described below",
+    setting: `The situation, in the learner's own words: "${practice.customScenario}"`,
+    goal: "Play your side of that situation convincingly and keep it moving.",
+    opener: "open the scene with a natural first line for this situation",
+  };
+}
+
 const $ = (id) => document.getElementById(id);
 const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 
@@ -1148,23 +1504,152 @@ function languageName(code) {
   return lang ? lang.name : "English";
 }
 
-// Prepends a language-lock instruction ahead of the user's own personality
-// prompt, so the model speaks/understands only the selected language
-// regardless of what language the user actually speaks to it in.
+// Target-language-only frame: the original behaviour.
+function immersionFrame(name) {
+  return `Speak and understand only ${name}. Always respond in ${name}, ` +
+    `even if the user speaks or writes in a different language — gently ` +
+    `continue the conversation in ${name} rather than switching.`;
+}
+
+// Guided frame: a lesson-style call. English carries the explaining; the
+// target language only shows up in the phrases being taught.
+function guidedFrame(name, scene) {
+  let text =
+    `GUIDED CALL — you are teaching, and English is your teaching language.\n` +
+    `Speak mostly in English. Every ${name} word or phrase you say is one you are ` +
+    `deliberately teaching, and you always say what it means straight afterwards.\n\n` +
+    `Across this call, introduce roughly three to five short ${name} phrases and make ` +
+    `them stick. For each one:\n` +
+    `1. Say the phrase in ${name}, clearly.\n` +
+    `2. Say what it means in English, in one short sentence.\n` +
+    `3. Say the phrase again, slowly.\n` +
+    `4. Ask the learner to say it back, then wait for them to try.\n` +
+    `5. Tell them in English what was good and what to fix. If it needs another go, ask ` +
+    `for one, then move on.\n` +
+    `6. Use it straight away in a tiny exchange — you say a ${name} line that invites the ` +
+    `phrase, they answer with it.\n\n` +
+    `Bring earlier phrases back later in the call so they get repeated.\n\n` +
+    `Rules: always SPEAK ${name} phrases in ${name} — never spell them out in English ` +
+    `letters, and never ask the learner to read anything. Keep every explanation to a ` +
+    `sentence or two; this is a phone call, not a lecture. Never reel off a list of ` +
+    `vocabulary — one phrase at a time, each one followed by the learner saying it. ` +
+    `Praise briefly and specifically, then keep moving.`;
+  if (scene) {
+    text += `\n\nThis call is built around one situation, described below. Teach the ` +
+      `phrases the learner would actually need there. Once they have a few under their ` +
+      `belt, play the other person in that situation in ${name} so they can try it out, ` +
+      `and step back out into English to explain whenever they get stuck. Say which one ` +
+      `you are doing when you switch, so they always know.`;
+  } else {
+    text += `\n\nOpen the call yourself, before the learner has said anything: greet them ` +
+      `in English and say in one sentence what you are going to work on today.`;
+  }
+  return text;
+}
+
+// The learner tapped EN. This is the one thing that can pull the coach out of
+// a scene, because it is an explicit request from the UI rather than something
+// said inside the conversation (which stays in character — see sceneFrame).
+function englishAssistFrame(name, scene) {
+  const base =
+    `The learner has asked for help in English. You may speak English for ` +
+    `now: explain what they're stuck on, give them the ${name} words or ` +
+    `phrasing they need, and help them understand. Keep it short and ` +
+    `spoken. When you give ${name} examples, say them in ${name}. Stay in ` +
+    `this helping mode until told otherwise.`;
+  if (!scene) return base;
+  return base + `\n\nYou are part-way through the situation described below. Step out of ` +
+    `it for as long as they need — it is fine to acknowledge the scene now, because they ` +
+    `asked you to. When they are ready, slide back into character as ${scene.role} and ` +
+    `pick the scene up where it left off.`;
+}
+
+// Role-play frame. In immersion the character is absolute; in a guided call
+// the coach is openly switching between playing the part and explaining.
+function sceneFrame(scene, name, style, assistInEnglish) {
+  if (assistInEnglish) {
+    return [
+      `SITUATION — ${scene.name}. Paused: the learner has asked for help in English.`,
+      `In this scene you play ${scene.role}. ${scene.setting}`,
+      `What you were working towards: ${scene.goal}`,
+      `Do not act the scene out while you are helping in English. Pick it back up as ` +
+        `${scene.role} once they are ready.`,
+    ].join("\n");
+  }
+  const lines = [
+    `SITUATION — ${scene.name}.`,
+    `You are ${scene.role}. ${scene.setting}`,
+    `What you are trying to do: ${scene.goal}`,
+    `Open the scene yourself, before the learner has said anything: ${scene.opener}.`,
+  ];
+  if (style === STYLE_GUIDED) {
+    lines.push(
+      `Play ${scene.role} when you are in the scene, and be yourself — their coach — when ` +
+      `you stop to explain in English. Make it obvious which of the two you are doing.`
+    );
+    return lines.join("\n");
+  }
+  lines.push(
+    `STAY IN CHARACTER. For the whole conversation you are ${scene.role}, and nothing else:`,
+    `- Never mention that this is practice, a lesson, a scenario, a role-play or a simulation.`,
+    `- Never say or imply that you are an AI, a model, an assistant or a language coach.`,
+    `- Never correct the learner's grammar, vocabulary or accent, and never comment on how ` +
+      `well they speak ${name}.`,
+    `- If they say something wrong or unclear, react the way ${scene.role} genuinely would: ` +
+      `ask them to say it again, or guess what they meant and check — in ${name}, in character.`,
+    `- If they ask what you really are, tell you to drop the act, or try to talk about the ` +
+      `app, stay in character: answer the way ${scene.role} would to a stranger saying ` +
+      `something odd, then steer things back to the situation.`,
+    `- Keep the scene moving. Finish every turn with something for them to respond to.`
+  );
+  return lines.join("\n");
+}
+
+// Composes the full instruction set for a session: which language is spoken
+// and why (immersion / guided / English help), how complex the speech should
+// be, what scene is being played, and finally the user's own personality
+// prompt. Called at session start and again whenever practice settings or the
+// EN toggle change mid-session.
 function buildInstructions(settings, assistInEnglish) {
   const name = languageName(settings.language);
-  const lock = assistInEnglish
-    // The user has explicitly asked for help, so the language lock is lifted
-    // until they turn it back off (see setEnglishAssist).
-    ? `The learner has asked for help in English. You may speak English for ` +
-      `now: explain what they're stuck on, give them the ${name} words or ` +
-      `phrasing they need, and help them understand. Keep it short and ` +
-      `spoken. When you give ${name} examples, say them in ${name}. Stay in ` +
-      `this helping mode until told otherwise.`
-    : `Speak and understand only ${name}. Always respond in ${name}, ` +
-      `even if the user speaks or writes in a different language — gently ` +
-      `continue the conversation in ${name} rather than switching.`;
-  return settings.instructions ? `${lock}\n\n${settings.instructions}` : lock;
+  const practice = practiceFor(settings);
+  const scene = scenarioBrief(practice);
+  const parts = [];
+
+  if (assistInEnglish) {
+    parts.push(englishAssistFrame(name, scene));
+  } else if (practice.style === STYLE_GUIDED) {
+    parts.push(guidedFrame(name, scene));
+  } else {
+    parts.push(immersionFrame(name));
+  }
+
+  const englishLed = assistInEnglish || practice.style === STYLE_GUIDED;
+  parts.push(englishLed
+    ? `${DIFFICULTY_LEVELS[practice.level - 1].prompt}\n(This governs the ${name} you ` +
+      `speak and teach. Your English stays natural.)`
+    : DIFFICULTY_LEVELS[practice.level - 1].prompt);
+
+  if (scene) parts.push(sceneFrame(scene, name, practice.style, assistInEnglish));
+
+  const personality = (settings.instructions || "").trim();
+  if (personality) {
+    // In a scene the stock "you are a voice coach" prompt would contradict the
+    // character, so it is demoted to a note about delivery rather than role.
+    parts.push(scene && !assistInEnglish && practice.style !== STYLE_GUIDED
+      ? `PERSONALITY — bring this to the character you are playing, without stepping out ` +
+        `of the scene:\n${personality}`
+      : personality);
+  }
+
+  return parts.join("\n\n");
+}
+
+// A guided call and any role-play both need the coach to speak first —
+// the learner can't be expected to open a scene in a language they're learning.
+function needsSceneKickoff(settings) {
+  const practice = practiceFor(settings || {});
+  return practice.style === STYLE_GUIDED || !!scenarioBrief(practice);
 }
 
 // Languages whose script isn't easily sounded out by a Latin-alphabet
@@ -1448,8 +1933,8 @@ function setState(state, errorDetail) {
   $("orbIconMic").classList.toggle("hidden", isRecording);
   $("orbIconStop").classList.toggle("hidden", !isRecording);
   $("endSessionBtn").disabled = !isLive;
-  $("englishHelpBtn").disabled = !isLive;
   if (!isLive && englishAssist) setEnglishAssist(false);
+  refreshEnglishHelpButton();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1540,10 +2025,11 @@ let economyMessages = [];   // chat history sent to /v1/chat/completions (econom
 // have a whole side conversation in English and then switch back.
 let englishAssist = false;
 
-// Pushes the current englishAssist mode into whichever session is running.
-// Realtime takes a session.update over the data channel; economy mode just
-// rewrites its system message, which is re-sent with every REST turn.
-function applyAssistInstructions() {
+// Pushes the current instructions — language frame, difficulty, situation and
+// the EN toggle — into whichever session is running. Realtime takes a
+// session.update over the data channel; economy mode just rewrites its system
+// message, which is re-sent with every REST turn. No-op when nothing is live.
+function applySessionInstructions() {
   const settings = loadSettings();
   if (!settings) return;
   const instructions = buildInstructions(settings, englishAssist);
@@ -1564,8 +2050,8 @@ function setEnglishAssist(on) {
   const btn = $("englishHelpBtn");
   btn.classList.toggle("active", on);
   btn.setAttribute("aria-pressed", String(on));
-  btn.title = on ? "Stop English help — back to the target language" : "Ask for help in English";
-  applyAssistInstructions();
+  applySessionInstructions();
+  refreshEnglishHelpButton();
 }
 
 // Economy mode records the user's turn to send to the transcription
@@ -1603,6 +2089,7 @@ async function startSession() {
       await startRealtimeSession(settings);
     } else {
       await startEconomySession(settings);
+      if (needsSceneKickoff(settings)) economyKickoffScene(settings);
     }
   } catch (err) {
     console.error("[VoiceCoach] startSession failed:", err);
@@ -1686,6 +2173,12 @@ async function startRealtimeSession(settings) {
       },
     }));
     setState("ready");
+    // A guided call or a role-play has to be opened by the coach — the learner
+    // can't be expected to start a scene in the language they're learning.
+    if (needsSceneKickoff(settings)) {
+      dc.send(JSON.stringify({ type: "response.create" }));
+      setState("thinking");
+    }
   });
   dc.addEventListener("message", handleRealtimeEvent);
   dc.addEventListener("close", () => {
@@ -1877,7 +2370,7 @@ async function economyTranscribe(blob, settings) {
   return (data?.text || "").trim();
 }
 
-async function economyChat(settings) {
+async function economyChat(settings, messages) {
   const resp = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -1886,7 +2379,7 @@ async function economyChat(settings) {
     },
     body: JSON.stringify({
       model: ECONOMY_CHAT_MODEL,
-      messages: economyMessages,
+      messages: messages || economyMessages,
     }),
   });
   if (!resp.ok) {
@@ -2839,6 +3332,7 @@ function openMain() {
   $("tabNav").classList.remove("hidden");
   $("langBar").classList.remove("hidden");
   renderLangBar();
+  renderPracticeBar();
   switchTab("coach");
   updateDueBadge();
   setState("idle");
@@ -2846,6 +3340,193 @@ function openMain() {
 
 $("tabCoachBtn").addEventListener("click", () => switchTab("coach"));
 $("tabCardsBtn").addEventListener("click", () => switchTab("cards"));
+
+/* ---------------------------------------------------------------------- */
+/* Practice setup UI (difficulty / coaching style / situation)            */
+/* ---------------------------------------------------------------------- */
+
+// Draft of the practice settings while the modal is open, so Cancel discards.
+let practiceDraft = null;
+
+function truncateLabel(text, max) {
+  const clean = String(text).replace(/\s+/g, " ").trim();
+  return clean.length > max ? clean.slice(0, max - 1) + "…" : clean;
+}
+
+// Writes the practice fields back into the shared settings blob, leaving the
+// API key / voice / model fields alone.
+function savePractice(patch) {
+  const current = loadSettings();
+  if (!current) return;
+  saveSettings(Object.assign({}, current, patch));
+}
+
+function renderPracticeBar() {
+  const settings = loadSettings();
+  if (!settings) return;
+  const practice = practiceFor(settings);
+  const sc = practice.scenario;
+  const scenarioName = sc.id === SCENARIO_CUSTOM && practice.customScenario
+    ? truncateLabel(practice.customScenario, 20)
+    : sc.name;
+  $("chipScenario").textContent = `${sc.icon} ${scenarioName}`;
+  $("chipLevel").textContent = `Level ${practice.level}`;
+  $("chipStyle").textContent = practice.style === STYLE_GUIDED ? "Guided" : "Immersion";
+}
+
+// The EN button is pointless in a guided call (the coach is already explaining
+// in English), so it is disabled there rather than stacking two English
+// instructions on top of each other.
+function refreshEnglishHelpButton() {
+  const btn = $("englishHelpBtn");
+  if (!btn) return;
+  const isLive = currentState !== "idle" && currentState !== "error";
+  const guided = practiceFor(loadSettings() || {}).style === STYLE_GUIDED;
+  btn.disabled = !isLive || guided;
+  btn.title = guided
+    ? "Guided calls already explain in English"
+    : englishAssist
+      ? "Stop English help — back to the target language"
+      : "Ask for help in English";
+  if (guided && englishAssist) setEnglishAssist(false);
+}
+
+function renderScenarioGrid() {
+  $("scenarioGrid").innerHTML = SCENARIOS.map((s) => `
+    <button type="button" class="scenario-card" data-scenario="${escapeHtml(s.id)}">
+      <span class="scenario-icon">${s.icon}</span>${escapeHtml(s.name)}
+    </button>`).join("");
+}
+
+function syncPracticeModal() {
+  const level = DIFFICULTY_LEVELS[practiceDraft.level - 1];
+  $("levelValueLabel").textContent = `${practiceDraft.level} · ${level.name}`;
+  $("levelBlurb").textContent = level.blurb;
+
+  $$(".pill-toggle-btn", $("styleToggle"))
+    .forEach((b) => b.classList.toggle("active", b.dataset.style === practiceDraft.style));
+  $("styleHint").textContent = STYLE_HINTS[practiceDraft.style] || "";
+
+  $$(".scenario-card", $("scenarioGrid"))
+    .forEach((b) => b.classList.toggle("active", b.dataset.scenario === practiceDraft.scenarioId));
+
+  const sc = SCENARIOS.find((s) => s.id === practiceDraft.scenarioId) || SCENARIOS[0];
+  const isCustom = sc.id === SCENARIO_CUSTOM;
+  $("customScenarioField").classList.toggle("hidden", !isCustom);
+  if (sc.id === SCENARIO_NONE) {
+    $("scenarioHint").textContent = "No situation — an open conversation about whatever comes up.";
+  } else if (isCustom) {
+    $("scenarioHint").textContent = "";
+  } else {
+    $("scenarioHint").textContent = `${sc.blurb} ` +
+      (practiceDraft.style === STYLE_GUIDED
+        ? "In a guided call the coach steps out of the scene to explain in English."
+        : "The coach opens the scene and stays in character throughout.");
+  }
+}
+
+function openPracticeModal() {
+  const settings = loadSettings();
+  if (!settings) return;
+  const p = practiceFor(settings);
+  practiceDraft = {
+    level: p.level,
+    style: p.style,
+    scenarioId: p.scenario.id,
+    customScenario: p.customScenario,
+  };
+  $("levelRange").value = String(practiceDraft.level);
+  $("customScenarioInput").value = practiceDraft.customScenario;
+  renderScenarioGrid();
+  syncPracticeModal();
+  $("practiceApplyHint").textContent = (currentState === "idle" || currentState === "error")
+    ? "Applies when you start your next session."
+    : "Applies from your next turn in this conversation.";
+  $("practiceModal").classList.remove("hidden");
+}
+
+$("practiceBar").addEventListener("click", openPracticeModal);
+
+$("levelRange").addEventListener("input", (e) => {
+  if (!practiceDraft) return;
+  practiceDraft.level = parseInt(e.target.value, 10) || DEFAULT_LEVEL;
+  syncPracticeModal();
+});
+
+$("styleToggle").addEventListener("click", (e) => {
+  const btn = e.target.closest(".pill-toggle-btn");
+  if (!btn || !practiceDraft) return;
+  practiceDraft.style = btn.dataset.style;
+  syncPracticeModal();
+});
+
+$("scenarioGrid").addEventListener("click", (e) => {
+  const btn = e.target.closest(".scenario-card");
+  if (!btn || !practiceDraft) return;
+  practiceDraft.scenarioId = btn.dataset.scenario;
+  syncPracticeModal();
+  if (practiceDraft.scenarioId === SCENARIO_CUSTOM) $("customScenarioInput").focus();
+});
+
+$("cancelPracticeBtn").addEventListener("click", () => {
+  practiceDraft = null;
+  $("practiceModal").classList.add("hidden");
+});
+
+$("savePracticeBtn").addEventListener("click", () => {
+  if (!practiceDraft) return;
+  const custom = $("customScenarioInput").value.trim();
+  if (practiceDraft.scenarioId === SCENARIO_CUSTOM && !custom) {
+    alert("Describe the situation you want to practise, or pick one of the presets.");
+    $("customScenarioInput").focus();
+    return;
+  }
+  savePractice({
+    level: practiceDraft.level,
+    style: practiceDraft.style,
+    scenario: practiceDraft.scenarioId,
+    customScenario: custom,
+  });
+  practiceDraft = null;
+  $("practiceModal").classList.add("hidden");
+  renderPracticeBar();
+  refreshEnglishHelpButton();
+  // A running session picks the new setup up on its next turn.
+  applySessionInstructions();
+});
+
+/* ---------------------------------------------------------------------- */
+/* Opening line for guided calls and role-play scenes (economy mode)      */
+/* ---------------------------------------------------------------------- */
+
+// Realtime just gets a bare response.create (see startRealtimeSession); economy
+// mode has no notion of "reply without a user turn", so it runs one extra chat
+// call with a throwaway nudge that is never kept in the history.
+async function economyKickoffScene(settings) {
+  const stillLive = () => currentState !== "idle" && currentState !== "error";
+  try {
+    setState("thinking");
+    const replyText = await economyChat(settings, economyMessages.concat([{
+      role: "system",
+      content: "Begin now: say your opening line. The learner has not said anything yet.",
+    }]));
+    if (!replyText || !stillLive()) {
+      if (stillLive()) setState("ready");
+      return;
+    }
+    economyMessages.push({ role: "assistant", content: replyText });
+    setTranscriptFinal("assistant", replyText);
+
+    setState("assistant_speaking");
+    const speech = await economySpeak(replyText, settings);
+    if (!stillLive()) return;
+    await playEconomyAudio(speech.url);
+    if (currentState === "assistant_speaking") setState("ready");
+  } catch (err) {
+    console.error("[VoiceCoach] scene kickoff failed:", err);
+    if (stillLive()) setState("error", humanizeError(err));
+  }
+}
 
 // Wires a Realtime/Economy pill toggle: shows the right voice field + the
 // realtime-only model field for whichever mode is currently selected.
@@ -2889,7 +3570,9 @@ $("saveSetupBtn").addEventListener("click", () => {
     return;
   }
   errEl.textContent = "";
-  saveSettings({
+  // Merge rather than replace — practice setup (difficulty, style, situation)
+  // lives in the same settings blob and must survive a save from this form.
+  saveSettings(Object.assign({}, loadSettings() || {}, {
     apiKey,
     language: $("languageSelect").value,
     mode: activeMode($("modeToggle")),
@@ -2897,7 +3580,7 @@ $("saveSetupBtn").addEventListener("click", () => {
     economyVoice: $("economyVoiceSelect").value,
     instructions: $("instructionsInput").value.trim(),
     model: $("modelInput").value.trim() || "gpt-realtime",
-  });
+  }));
   noteLanguageUsed($("languageSelect").value);
   openMain();
 });
@@ -2944,7 +3627,7 @@ $("saveSettingsBtn").addEventListener("click", () => {
   }
   const previousLanguage = (loadSettings() || {}).language;
   const newLanguage = $("s_languageSelect").value;
-  saveSettings({
+  saveSettings(Object.assign({}, loadSettings() || {}, {
     apiKey,
     language: newLanguage,
     mode: activeMode($("s_modeToggle")),
@@ -2952,7 +3635,7 @@ $("saveSettingsBtn").addEventListener("click", () => {
     economyVoice: $("s_economyVoiceSelect").value,
     instructions: $("s_instructionsInput").value.trim(),
     model: $("s_modelInput").value.trim() || "gpt-realtime",
-  });
+  }));
   // Switching languages mid-conversation would leave a half-foreign,
   // half-new-language transcript behind, so start clean instead.
   if (previousLanguage && newLanguage !== previousLanguage) {
