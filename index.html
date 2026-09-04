@@ -332,7 +332,7 @@
     align-items:center;
     width:100%;
     height:100%;
-    gap:16px;
+    gap:10px;
     padding-top:52px;
   }
   .transcript-wrap{
@@ -380,13 +380,13 @@
     display:flex;
     flex-direction:column;
     align-items:center;
-    gap:24px;
+    gap:12px;
     padding-bottom:8px;
   }
   .orb-wrap{
     position:relative;
-    width:220px;
-    height:220px;
+    width:96px;
+    height:96px;
     display:flex;
     align-items:center;
     justify-content:center;
@@ -400,8 +400,8 @@
     transform:scale(1);
   }
   .orb{
-    width:150px;
-    height:150px;
+    width:88px;
+    height:88px;
     border-radius:50%;
     background:radial-gradient(circle at 35% 30%, #3a3a3c, #131313 70%);
     border:1px solid var(--border);
@@ -413,7 +413,7 @@
     box-shadow:0 0 0 rgba(255,255,255,0);
   }
   .orb:active{ transform:scale(.97); }
-  .orb svg{ width:46px; height:46px; opacity:.85; }
+  .orb svg{ width:30px; height:30px; opacity:.85; }
 
   /* idle: gentle breathing */
   .app[data-state="idle"] .orb{
@@ -427,7 +427,7 @@
   /* ready: connected, mic off, waiting for a tap-to-talk */
   .app[data-state="ready"] .orb{
     background:radial-gradient(circle at 35% 30%, #2f2f31, #101010 70%);
-    box-shadow:0 0 40px rgba(255,255,255,.15);
+    box-shadow:0 0 22px rgba(255,255,255,.15);
   }
   /* user_speaking: ring animates outward */
   .app[data-state="user_speaking"] .orb-ring{
@@ -435,7 +435,7 @@
     animation:ripple 1.4s ease-out infinite;
   }
   .app[data-state="user_speaking"] .orb{
-    box-shadow:0 0 55px rgba(255,255,255,.3);
+    box-shadow:0 0 28px rgba(255,255,255,.3);
   }
   /* thinking: spinning subtle */
   .app[data-state="thinking"] .orb{
@@ -448,12 +448,12 @@
     animation:ripple 1.1s ease-out infinite;
   }
   .app[data-state="assistant_speaking"] .orb{
-    box-shadow:0 0 60px rgba(255,255,255,.45);
+    box-shadow:0 0 32px rgba(255,255,255,.45);
     background:radial-gradient(circle at 35% 30%, #575757, #131313 70%);
   }
   /* error */
   .app[data-state="error"] .orb{
-    box-shadow:0 0 40px rgba(255,92,122,.35);
+    box-shadow:0 0 22px rgba(255,92,122,.35);
   }
 
   @keyframes breathe{
@@ -480,7 +480,7 @@
 
   .controls{
     display:flex;
-    gap:14px;
+    gap:20px;
     align-items:center;
   }
   .icon-btn{
@@ -662,59 +662,151 @@
     overflow:hidden;
   }
   .flashcards h1{ font-size:22px; margin:0 0 2px; font-weight:600; }
-  .fc-list{
+  .fc-view{
+    width:100%;
+    height:100%;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+    min-height:0;
+  }
+  .fc-decks-head{ flex-shrink:0; }
+
+  /* ---------- level 1: deck list ---------- */
+  /* Full-bleed rows separated by rules, cancelling .app-content's padding so
+     the dividers run edge to edge the way a settings list does. */
+  .fc-deck-list{
+    flex:1;
+    min-height:0;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    margin:0 -24px;
+    border-top:1px solid var(--border);
+  }
+  .fc-deck-row{
+    width:100%;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:14px 24px;
+    background:transparent;
+    border:none;
+    border-bottom:1px solid var(--border);
+    color:var(--fg);
+    font:inherit;
+    text-align:left;
+    cursor:pointer;
+  }
+  .fc-deck-row:hover{ background:var(--bg2); }
+  .fc-deck-row-main{ flex:1; min-width:0; }
+  .fc-deck-row-name{
+    font-size:17px;
+    font-weight:600;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .fc-deck-row-sub{ font-size:13px; color:var(--dim); margin-top:4px; }
+  .fc-deck-row-sub.is-due{ color:var(--fg); }
+  .fc-deck-chevron{ flex-shrink:0; width:16px; height:16px; color:var(--dim); }
+
+  /* ---------- level 2: one deck ---------- */
+  .fc-deck-head{
+    flex-shrink:0;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .fc-back-btn{
+    flex-shrink:0;
+    width:34px;
+    height:34px;
+    border-radius:50%;
+    border:1px solid var(--border);
+    background:var(--panel);
+    color:var(--fg);
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .fc-back-btn svg{ width:17px; height:17px; }
+  .fc-back-btn:hover{ border-color:var(--accent); }
+  .fc-deck-title{ font-size:20px; font-weight:600; min-width:0; }
+  .fc-deck-body{
     flex:1;
     min-height:0;
     overflow-y:auto;
     overscroll-behavior:contain;
     display:flex;
     flex-direction:column;
-    gap:8px;
+    gap:20px;
   }
-  .fc-folder{ display:flex; flex-direction:column; gap:8px; }
-  .fc-folder-header{
+  .fc-hero{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:22px 18px 18px;
     display:flex;
+    flex-direction:column;
     align-items:center;
-    gap:8px;
+    gap:2px;
   }
-  .fc-folder-toggle{
+  .fc-hero-count{ font-size:52px; font-weight:700; line-height:1; }
+  .fc-hero-label{ font-size:14px; color:var(--dim); margin-bottom:16px; }
+  .fc-hero-stats{
+    width:100%;
     display:flex;
-    align-items:center;
-    gap:8px;
-    background:none;
-    border:none;
-    padding:4px 2px;
-    cursor:pointer;
-    color:var(--fg);
-    font:inherit;
-    text-align:left;
+    align-items:stretch;
+    margin-bottom:18px;
+  }
+  .fc-stat{
     flex:1;
-    min-width:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:3px;
   }
-  .fc-folder-chevron{
-    flex-shrink:0;
-    width:14px;
-    height:14px;
-    transition:transform .15s;
+  .fc-stat + .fc-stat{ border-left:1px solid var(--border); }
+  .fc-stat-n{ font-size:19px; font-weight:700; }
+  .fc-stat-l{ font-size:11px; color:var(--dim); }
+  .fc-hero .btn-primary{ width:100%; }
+
+  .fc-deck-section{ display:flex; flex-direction:column; gap:10px; }
+  .fc-section-title{ font-size:16px; font-weight:600; }
+  .fc-bar{
+    display:flex;
+    /* The grey track is the not-studied remainder, so the coloured segments
+       sit at the right-hand end: not studied | learning | mastered. */
+    justify-content:flex-end;
+    height:9px;
+    border-radius:999px;
+    overflow:hidden;
+    background:#3a3a3c;
+  }
+  .fc-bar-seg{ height:100%; transition:width .2s; }
+  .fc-bar-seg.is-learning{ background:#5ec26a; }
+  .fc-bar-seg.is-mastered{ background:#6aa9f0; }
+  .fc-legend{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px 14px;
+    font-size:12px;
     color:var(--dim);
   }
-  .fc-folder.collapsed .fc-folder-chevron{ transform:rotate(-90deg); }
-  .fc-folder-name{ font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; }
-  .fc-folder-count{ font-size:12px; color:var(--dim); margin-left:auto; }
-  .fc-folder-review-btn{
-    flex-shrink:0;
-    font-size:12px;
-    font-weight:700;
-    padding:6px 12px;
-    border-radius:999px;
-    border:1px solid var(--border);
-    background:var(--panel);
-    color:var(--fg);
-    cursor:pointer;
+  .fc-legend-item{ display:flex; align-items:center; gap:5px; }
+  .fc-legend-item b{ color:var(--fg); font-weight:700; }
+  .fc-legend .dot{
+    width:9px;
+    height:9px;
+    border-radius:50%;
+    display:inline-block;
   }
-  .fc-folder-review-btn:disabled{ opacity:.35; cursor:default; }
-  .fc-folder-rows{ display:flex; flex-direction:column; gap:8px; }
-  .fc-folder.collapsed .fc-folder-rows{ display:none; }
+  .fc-legend .dot.is-new{ background:#3a3a3c; }
+  .fc-legend .dot.is-learning{ background:#5ec26a; }
+  .fc-legend .dot.is-mastered{ background:#6aa9f0; }
+
+  .fc-rows{ display:flex; flex-direction:column; gap:8px; padding-bottom:8px; }
   .fc-row{
     display:flex;
     align-items:center;
@@ -774,6 +866,15 @@
     border-radius:10px;
     padding:10px 12px;
   }
+  .tr-en{
+    margin-top:8px;
+    padding-top:8px;
+    border-top:1px solid rgba(255,255,255,.16);
+    font-size:13px;
+    font-style:italic;
+    opacity:.8;
+  }
+  .bubble.user .tr-en{ border-top-color:rgba(0,0,0,.2); }
   .tr-body{
     max-height:45vh;
     overflow-y:auto;
@@ -805,30 +906,130 @@
   .word.no-select:hover{ background:transparent; }
 
   /* ---------- flashcard review session ---------- */
-  .review-modal{ align-items:center; text-align:center; }
-  .review-progress{ font-size:12px; color:var(--dim); }
-  .review-card{ padding:20px 0; display:flex; flex-direction:column; align-items:center; gap:4px; }
-  .review-word-row{ display:flex; align-items:center; gap:10px; }
-  .review-word{ font-size:26px; font-weight:700; }
-  .review-pronunciation{ font-size:13px; color:var(--accent2); font-style:italic; margin-top:2px; }
-  .review-context{ font-size:13px; color:var(--dim); margin-top:10px; }
-  .review-translation{ font-size:16px; margin-top:14px; color:var(--accent2); }
-  .review-grades{ display:flex; gap:8px; }
-  .grade-btn{
+  /* ---------- full-screen review ---------- */
+  .review-screen{
+    position:fixed;
+    inset:0;
+    z-index:20;
+    background:var(--bg);
+    display:flex;
+    flex-direction:column;
+  }
+  .review-head{
+    flex-shrink:0;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:14px 16px 10px;
+  }
+  .review-icon-btn{
+    width:34px;
+    height:34px;
+    border:none;
+    background:transparent;
+    color:var(--fg);
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-shrink:0;
+  }
+  .review-icon-btn svg{ width:20px; height:20px; }
+  .review-head-spacer{ width:34px; flex-shrink:0; }
+  .review-progress{
     flex:1;
-    padding:12px 6px;
-    border-radius:10px;
-    border:1px solid var(--border);
+    text-align:center;
+    font-size:13px;
+    font-weight:600;
+    color:var(--dim);
+  }
+  .review-progress b{ color:var(--fg); }
+  .review-track{ flex-shrink:0; height:3px; background:var(--border); }
+  .review-track-fill{ height:100%; width:0; background:#5ec26a; transition:width .2s; }
+
+  .review-card{
+    flex:1;
+    min-height:0;
+    margin:12px 12px 0;
+    padding:28px 20px;
+    background:var(--bg2);
+    border-radius:16px;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:14px;
+  }
+  .review-word{
+    font-size:28px;
+    font-weight:600;
+    line-height:1.3;
+    word-break:break-word;
+  }
+  .review-audio-btn{
+    width:52px;
+    height:52px;
+    border-radius:50%;
+    border:none;
     background:var(--panel);
     color:var(--fg);
-    font-size:13px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-shrink:0;
+  }
+  .review-audio-btn svg{ width:23px; height:23px; }
+  .review-audio-btn:hover{ background:#2a2a2c; }
+  .review-back{
+    width:100%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:12px;
+  }
+  .review-rule{ width:100%; height:1px; background:var(--border); }
+  .review-pronunciation{ font-size:22px; color:var(--fg); }
+  .review-translation{ font-size:19px; color:var(--accent2); }
+  .review-context{ font-size:13px; color:var(--dim); line-height:1.5; }
+  .review-context-en{ font-size:13px; color:var(--dim); font-style:italic; line-height:1.5; }
+
+  .review-foot{ flex-shrink:0; padding:14px 12px calc(14px + env(safe-area-inset-bottom)); }
+  .review-reveal{
+    width:100%;
+    padding:16px;
+    background:transparent;
+    border:none;
+    color:var(--fg);
+    font-family:inherit;
+    font-size:16px;
     font-weight:600;
     cursor:pointer;
   }
-  .grade-btn.again{ border-color:var(--danger); color:var(--danger); }
-  .grade-btn.hard{ border-color:var(--dim); color:var(--dim); }
-  .grade-btn.good{ border-color:var(--accent2); color:var(--accent2); }
-  .grade-btn.easy{ border-color:var(--accent); color:var(--accent); }
+  .review-grades{ display:flex; gap:8px; }
+  .grade-btn{
+    flex:1;
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:3px;
+    padding:12px 4px;
+    border-radius:12px;
+    border:none;
+    font-family:inherit;
+    font-size:15px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .grade-btn .grade-when{ font-size:12px; font-weight:600; opacity:.85; }
+  .grade-btn:active{ transform:scale(.97); }
+  .grade-btn.again{ background:#3a1e22; color:#ff8080; }
+  .grade-btn.hard{  background:#3a3020; color:#e0a34e; }
+  .grade-btn.good{  background:#1f3524; color:#6bd47f; }
+  .grade-btn.easy{  background:#1e2c3d; color:#6aa9f0; }
 </style>
 </head>
 <body>
@@ -942,34 +1143,35 @@
     </div>
 
     <div class="orb-section">
-      <div class="orb-wrap">
-        <div class="orb-ring"></div>
-        <button class="orb" id="orbBtn" aria-label="Start talking">
-          <!-- crossed-out mic icon: shown whenever we are NOT actively
-               recording (idle/connecting/ready/thinking/speaking/error), so
-               it's always visually obvious the app isn't picking anything up -->
-          <svg id="orbIconMic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-            <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/>
-            <path d="M19 11a7 7 0 0 1-14 0"/>
-            <path d="M12 18v3"/>
-            <line x1="4" y1="4" x2="20" y2="20"/>
-          </svg>
-          <!-- stop icon -->
-          <svg id="orbIconStop" class="hidden" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="7" y="7" width="10" height="10" rx="2"/>
-          </svg>
-        </button>
-      </div>
-
       <div class="status" id="statusText">Tap to start</div>
 
+      <!-- Mic sits between the EN and end-session buttons: a small control row
+           rather than a hero orb, so the transcript gets the rest of the screen. -->
       <div class="controls">
-        <!-- While active the coach may drop out of the target language and
-             help in English; it stays on until the user taps it off. -->
         <button class="icon-btn" id="englishHelpBtn" disabled aria-pressed="false"
                 title="Ask for help in English" aria-label="Ask for help in English">
           <span class="icon-btn-label">EN</span>
         </button>
+
+        <div class="orb-wrap">
+          <div class="orb-ring"></div>
+          <button class="orb" id="orbBtn" aria-label="Start talking">
+            <!-- crossed-out mic icon: shown whenever we are NOT actively
+                 recording (idle/connecting/ready/thinking/speaking/error), so
+                 it's always visually obvious the app isn't picking anything up -->
+            <svg id="orbIconMic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z"/>
+              <path d="M19 11a7 7 0 0 1-14 0"/>
+              <path d="M12 18v3"/>
+              <line x1="4" y1="4" x2="20" y2="20"/>
+            </svg>
+            <!-- stop icon -->
+            <svg id="orbIconStop" class="hidden" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="7" y="7" width="10" height="10" rx="2"/>
+            </svg>
+          </button>
+        </div>
+
         <button class="icon-btn" id="endSessionBtn" disabled title="End session &amp; review transcript" aria-label="End session and review transcript">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
             <path d="M9 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/>
@@ -981,15 +1183,65 @@
     </div>
   </div>
 
-  <!-- ============ FLASHCARDS SCREEN ============ -->
+  <!-- ============ FLASHCARDS: DECK LIST + DECK DETAIL ============ -->
   <div class="flashcards hidden" id="flashcardsScreen">
-    <div>
-      <h1>Flashcards</h1>
-      <p class="sub" id="fcSummary" style="margin:0;">0 due today &middot; 0 total</p>
-      <p class="sub" style="margin:2px 0 0;">Each language reviews separately — use the Review button on its folder.</p>
+
+    <!-- level 1: one row per language deck -->
+    <div class="fc-view" id="fcDecksView">
+      <div class="fc-decks-head">
+        <h1>Decks</h1>
+        <p class="sub" id="fcSummary" style="margin:0;">0 due today &middot; 0 total</p>
+      </div>
+      <div class="fc-deck-list" id="fcDeckList"></div>
     </div>
-    <div class="fc-list" id="fcList">
-      <div class="transcript-empty">No flashcards yet — end a session to add some.</div>
+
+    <!-- level 2: one deck, with today's split and the full card list -->
+    <div class="fc-view hidden" id="fcDeckView">
+      <div class="fc-deck-head">
+        <button class="fc-back-btn" id="fcBackBtn" aria-label="Back to decks">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>
+          </svg>
+        </button>
+        <div class="fc-deck-title" id="fcDeckTitle"></div>
+      </div>
+
+      <div class="fc-deck-body">
+        <div class="fc-hero">
+          <div class="fc-hero-count" id="fcHeroCount">0</div>
+          <div class="fc-hero-label">cards for today</div>
+          <div class="fc-hero-stats">
+            <div class="fc-stat">
+              <span class="fc-stat-n" id="fcDueNew">0</span>
+              <span class="fc-stat-l">Not studied</span>
+            </div>
+            <div class="fc-stat">
+              <span class="fc-stat-n" id="fcDueLearning">0</span>
+              <span class="fc-stat-l">Learning</span>
+            </div>
+            <div class="fc-stat">
+              <span class="fc-stat-n" id="fcDueMastered">0</span>
+              <span class="fc-stat-l">Mastered</span>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="fcStudyBtn">Study cards</button>
+        </div>
+
+        <div class="fc-deck-section">
+          <div class="fc-section-title">Cards in deck (<span id="fcDeckTotal">0</span>)</div>
+          <div class="fc-bar">
+            <div class="fc-bar-seg is-learning" id="fcBarLearning"></div>
+            <div class="fc-bar-seg is-mastered" id="fcBarMastered"></div>
+          </div>
+          <div class="fc-legend">
+            <span class="fc-legend-item"><i class="dot is-new"></i><b id="fcTotNew">0</b> Not studied</span>
+            <span class="fc-legend-item"><i class="dot is-learning"></i><b id="fcTotLearning">0</b> Learning</span>
+            <span class="fc-legend-item"><i class="dot is-mastered"></i><b id="fcTotMastered">0</b> Mastered</span>
+          </div>
+        </div>
+
+        <div class="fc-rows" id="fcRows"></div>
+      </div>
     </div>
   </div>
 
@@ -1024,6 +1276,7 @@
     <div class="pill-toggle" id="segToggle">
       <button type="button" class="pill-toggle-btn active" data-seg="words">Words</button>
       <button type="button" class="pill-toggle-btn" data-seg="phrases">Phrases</button>
+      <button type="button" class="pill-toggle-btn" data-seg="translation">Translation</button>
     </div>
     <p class="tr-analyzing hidden" id="trAnalyzing"><span class="spinner"></span>Analyzing transcript for word/phrase boundaries…</p>
     <div class="tr-body" id="trBody"></div>
@@ -1053,6 +1306,11 @@
       <label for="wordContextInput">Context</label>
       <textarea id="wordContextInput" spellcheck="false" style="min-height:60px;"></textarea>
     </div>
+    <div class="field hidden" id="wordContextEnField">
+      <label for="wordContextEnInput">Context in English</label>
+      <textarea id="wordContextEnInput" spellcheck="false" style="min-height:60px;"></textarea>
+      <div class="hint" style="margin-top:6px;">Saved with the card, so the sentence still makes sense at review time.</div>
+    </div>
     <div class="field hidden" id="wordAudioField">
       <label>Audio clip</label>
       <audio id="wordAudioPreview" controls style="width:100%; height:36px;"></audio>
@@ -1080,29 +1338,42 @@
   </div>
 </div>
 
-<!-- ============ FLASHCARD REVIEW SESSION MODAL ============ -->
-<div class="modal-backdrop hidden" id="reviewModal">
-  <div class="modal review-modal">
-    <div class="review-progress" id="reviewProgress">1 / 1</div>
-    <div class="review-card">
-      <div class="review-word-row">
-        <div class="review-word" id="reviewWord"></div>
-        <button class="play-btn hidden" id="reviewPlayBtn" aria-label="Play audio" title="Play audio">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-        </button>
-      </div>
+<!-- ============ FULL-SCREEN REVIEW ============ -->
+<div class="review-screen hidden" id="reviewScreen">
+  <div class="review-head">
+    <button class="review-icon-btn" id="closeReviewBtn" aria-label="Close review">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 6L6 18"/><path d="M6 6l12 12"/>
+      </svg>
+    </button>
+    <div class="review-progress" id="reviewProgress">0/0</div>
+    <div class="review-head-spacer"></div>
+  </div>
+  <div class="review-track"><div class="review-track-fill" id="reviewTrackFill"></div></div>
+
+  <div class="review-card" id="reviewCard">
+    <div class="review-word" id="reviewWord"></div>
+    <button class="review-audio-btn hidden" id="reviewPlayBtn" aria-label="Play audio">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4h4l5 4V6L7 10H3zm13.5 2a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a6.8 6.8 0 0 1 0 13.4v2.1a8.9 8.9 0 0 0 0-17.6z"/></svg>
+    </button>
+
+    <div class="review-back hidden" id="reviewBack">
+      <div class="review-rule"></div>
       <div class="review-pronunciation hidden" id="reviewPronunciation"></div>
+      <div class="review-translation" id="reviewTranslation"></div>
       <div class="review-context hidden" id="reviewContext"></div>
-      <div class="review-translation hidden" id="reviewTranslation"></div>
+      <div class="review-context-en hidden" id="reviewContextEn"></div>
     </div>
-    <button class="btn btn-ghost" id="revealBtn">Show answer</button>
+  </div>
+
+  <div class="review-foot">
+    <button class="review-reveal" id="revealBtn">Tap to show answer</button>
     <div class="review-grades hidden" id="reviewGrades">
-      <button class="grade-btn again" data-grade="0">Again</button>
-      <button class="grade-btn hard" data-grade="1">Hard</button>
-      <button class="grade-btn good" data-grade="2">Good</button>
-      <button class="grade-btn easy" data-grade="3">Easy</button>
+      <button class="grade-btn again" data-grade="0">Again<span class="grade-when" id="gradeWhen0"></span></button>
+      <button class="grade-btn hard"  data-grade="1">Hard<span class="grade-when" id="gradeWhen1"></span></button>
+      <button class="grade-btn good"  data-grade="2">Good<span class="grade-when" id="gradeWhen2"></span></button>
+      <button class="grade-btn easy"  data-grade="3">Easy<span class="grade-when" id="gradeWhen3"></span></button>
     </div>
-    <button class="btn btn-ghost" id="closeReviewBtn">Close</button>
   </div>
 </div>
 
@@ -1511,38 +1782,51 @@ function immersionFrame(name) {
     `continue the conversation in ${name} rather than switching.`;
 }
 
-// Guided frame: a lesson-style call. English carries the explaining; the
-// target language only shows up in the phrases being taught.
+// Guided frame: the coach teaches the way a children's TV host does — stays in
+// the conversation and slips the English in beside it, rather than stopping to
+// run a lesson. An earlier version was a numbered six-step drill and it read as
+// disconnected English filler wrapped around the odd foreign phrase.
 function guidedFrame(name, scene) {
   let text =
-    `GUIDED CALL — you are teaching, and English is your teaching language.\n` +
-    `Speak mostly in English. Every ${name} word or phrase you say is one you are ` +
-    `deliberately teaching, and you always say what it means straight afterwards.\n\n` +
-    `Across this call, introduce roughly three to five short ${name} phrases and make ` +
-    `them stick. For each one:\n` +
-    `1. Say the phrase in ${name}, clearly.\n` +
-    `2. Say what it means in English, in one short sentence.\n` +
-    `3. Say the phrase again, slowly.\n` +
-    `4. Ask the learner to say it back, then wait for them to try.\n` +
-    `5. Tell them in English what was good and what to fix. If it needs another go, ask ` +
-    `for one, then move on.\n` +
-    `6. Use it straight away in a tiny exchange — you say a ${name} line that invites the ` +
-    `phrase, they answer with it.\n\n` +
-    `Bring earlier phrases back later in the call so they get repeated.\n\n` +
-    `Rules: always SPEAK ${name} phrases in ${name} — never spell them out in English ` +
-    `letters, and never ask the learner to read anything. Keep every explanation to a ` +
-    `sentence or two; this is a phone call, not a lecture. Never reel off a list of ` +
-    `vocabulary — one phrase at a time, each one followed by the learner saying it. ` +
-    `Praise briefly and specifically, then keep moving.`;
+    `GUIDED CALL — you teach the way a children's TV host does: you stay in the ` +
+    `conversation the whole time and slip the English in beside the ${name}, and you ` +
+    `never stop to deliver a lesson.\n\n` +
+    `Almost every turn you take has the same shape: say the ${name} line, say what it ` +
+    `means in English immediately after in the same breath, then walk them through ` +
+    `saying it. In Spanish it would sound like:\n` +
+    `  "¡Hola! ¿Cómo estás? — that means 'hi, how are you?' Try it with me: OH-lah. ` +
+    `KOH-moh es-TAHS. ¡Hola! ¿Cómo estás?"\n` +
+    `Then stop and let them try it.\n\n` +
+    `What keeps this from turning into filler:\n` +
+    `- Never announce what you are about to teach and never recap what you just ` +
+    `taught. No "today we're going to work on", no "great, now let's move on to the ` +
+    `next phrase". Just talk, and teach as you go.\n` +
+    `- The English gloss lands straight after the ${name}, and it is as short as you ` +
+    `can make it — one clause, not a sentence about a sentence.\n` +
+    `- Teach whole usable lines, not vocabulary lists. Everything you teach is ` +
+    `something they could say back to you right now.\n` +
+    `- After they try it, react in one short beat: name the single thing to fix, or ` +
+    `just answer them in ${name} and carry on. Do not grade them or praise at length.\n` +
+    `- Keep moving forward, and use a phrase again yourself a couple of exchanges ` +
+    `later so they hear it a second time in context.\n\n` +
+    `PRONUNCIATION WALK-THROUGH — this is the part they need most from you, so never ` +
+    `skip it. Break the phrase into syllables and respell each syllable the way an ` +
+    `English speaker would read it out loud, with the stressed syllable in ` +
+    `capitals where the language actually has stress ("OH-lah", "es-TAHS") and evenly ` +
+    `weighted where it does not, as in Japanese or Korean ("shoh-koo-bah"). Say the ` +
+    `syllables one at a time with a beat ` +
+    `between them, then say the whole phrase at normal speed. Always coach from the ` +
+    `English respelling, out loud — they are only listening, they cannot see anything, ` +
+    `so never spell a phrase out in the ${name} script and never ask them to read.`;
   if (scene) {
-    text += `\n\nThis call is built around one situation, described below. Teach the ` +
-      `phrases the learner would actually need there. Once they have a few under their ` +
-      `belt, play the other person in that situation in ${name} so they can try it out, ` +
-      `and step back out into English to explain whenever they get stuck. Say which one ` +
-      `you are doing when you switch, so they always know.`;
+    text += `\n\nYou are inside the situation described below and you stay inside it for ` +
+      `the whole call — this is not a lesson with a scene bolted onto it. Play your part ` +
+      `in ${name}, gloss yourself in English as you go, and teach them the lines they ` +
+      `need in order to answer you. Stay in the part even while you are coaching their ` +
+      `pronunciation.`;
   } else {
     text += `\n\nOpen the call yourself, before the learner has said anything: greet them ` +
-      `in English and say in one sentence what you are going to work on today.`;
+      `in ${name} first, gloss it in English, and walk them through saying it back.`;
   }
   return text;
 }
@@ -1584,8 +1868,10 @@ function sceneFrame(scene, name, style, assistInEnglish) {
   ];
   if (style === STYLE_GUIDED) {
     lines.push(
-      `Play ${scene.role} when you are in the scene, and be yourself — their coach — when ` +
-      `you stop to explain in English. Make it obvious which of the two you are doing.`
+      `You never step out of this scene — you stay that person for the whole call, and ` +
+      `the English glosses come from them too. Say them the way a patient local would ` +
+      `to someone they can hear is still learning, then carry straight on with what ` +
+      `you were saying.`
     );
     return lines.join("\n");
   }
@@ -1595,11 +1881,11 @@ function sceneFrame(scene, name, style, assistInEnglish) {
     `- Never say or imply that you are an AI, a model, an assistant or a language coach.`,
     `- Never correct the learner's grammar, vocabulary or accent, and never comment on how ` +
       `well they speak ${name}.`,
-    `- If they say something wrong or unclear, react the way ${scene.role} genuinely would: ` +
-      `ask them to say it again, or guess what they meant and check — in ${name}, in character.`,
+    `- If they say something wrong or unclear, react the way you genuinely would in that ` +
+      `job: ask them to say it again, or guess what they meant and check — in ${name}, in character.`,
     `- If they ask what you really are, tell you to drop the act, or try to talk about the ` +
-      `app, stay in character: answer the way ${scene.role} would to a stranger saying ` +
-      `something odd, then steer things back to the situation.`,
+      `app, stay in character: answer the way you would to a stranger saying something odd, ` +
+      `then steer things back to the situation.`,
     `- Keep the scene moving. Finish every turn with something for them to respond to.`
   );
   return lines.join("\n");
@@ -1727,6 +2013,51 @@ const PHRASE_DELIM = "␞";
 // what makes per-word flashcards possible for languages with no whitespace
 // between words (Japanese, Chinese) — naive whitespace-splitting would treat
 // a whole sentence in those languages as a single "word".
+// Translates every transcript line in one call. Runs alongside segmentation
+// when a session ends, so the Translation tab is ready without a second wait
+// and every flashcard made from the transcript can carry its sentence's
+// English meaning along with it.
+async function translateLines(lines, langCode) {
+  const settings = loadSettings();
+  const langName = languageName(langCode);
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${settings.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            `You translate a spoken ${langName} conversation into natural English for a ` +
+            `language learner. Translate meaning rather than word-for-word, keeping the ` +
+            `register and tone of the original — this is speech, so keep it colloquial. ` +
+            `Leave any stretch that is already English exactly as it is. Respond with ` +
+            `strict JSON only: {"translations": [...]} with exactly ${lines.length} ` +
+            `strings, one per input line, in the same order.`,
+        },
+        { role: "user", content: JSON.stringify(lines) },
+      ],
+    }),
+  });
+  if (!resp.ok) throw new Error(`Translation request failed (${resp.status})`);
+  const data = await resp.json();
+  let parsed;
+  try {
+    parsed = JSON.parse(data?.choices?.[0]?.message?.content || "{}");
+  } catch (e) {
+    throw new Error("Translation response was not valid JSON");
+  }
+  const out = Array.isArray(parsed?.translations) ? parsed.translations : [];
+  // Align by index — one missing entry shouldn't discard the rest.
+  return lines.map((_, i) => (typeof out[i] === "string" ? out[i] : ""));
+}
+
 async function analyzeTranscriptSegments(lines, langCode) {
   const settings = loadSettings();
   const langName = languageName(langCode);
@@ -1888,17 +2219,18 @@ function scheduleCard(card, grade) {
     card.due = todayStr(0); // stays due today so it resurfaces this/next session
     return;
   }
-  if (card.reps === 0) card.interval = 1;
-  else if (card.reps === 1) card.interval = 6;
-  else card.interval = Math.round(card.interval * card.ease);
-
-  if (grade === 1) { // Hard
-    card.interval = Math.max(1, Math.round(card.interval * 0.8));
-    card.ease = Math.max(1.3, card.ease - 0.15);
-  } else if (grade === 3) { // Easy
-    card.interval = Math.round(card.interval * 1.3);
-    card.ease += 0.15;
+  if (card.reps === 0) {
+    card.interval = grade === 1 ? 1 : grade === 3 ? 4 : 2;
+  } else if (card.reps === 1) {
+    card.interval = grade === 1 ? 3 : grade === 3 ? 8 : 6;
+  } else {
+    card.interval = Math.round(card.interval * card.ease);
+    if (grade === 1) card.interval = Math.max(1, Math.round(card.interval * 0.8));
+    else if (grade === 3) card.interval = Math.round(card.interval * 1.3);
   }
+
+  if (grade === 1) card.ease = Math.max(1.3, card.ease - 0.15);
+  else if (grade === 3) card.ease += 0.15;
   card.reps += 1;
   card.due = todayStr(card.interval);
 }
@@ -2544,8 +2876,10 @@ function splitMarked(marked, delimiter, original, fallbackParts) {
 }
 
 let segmentCache = [];       // parallel to transcriptHistory: [{words:[...], phrases:[...]}]
-let segmentMode = "words";   // "words" | "phrases" — which cached array to render
+let segmentMode = "words";   // "words" | "phrases" | "translation"
 let segmentationGeneration = 0; // prevents stale analysis replacing a newer review
+let lineTranslations = [];   // parallel to transcriptHistory: English for each line
+let translationsPending = false;
 
 async function openTranscriptReview() {
   const generation = ++segmentationGeneration;
@@ -2563,6 +2897,16 @@ async function openTranscriptReview() {
   // Render immediately with local segmentation, then upgrade phrase/word
   // boundaries in place once model analysis resolves.
   segmentCache = historySnapshot.map((e) => naiveSegments(e.text, currentSessionLanguage));
+  lineTranslations = [];
+  translationsPending = true;
+  translateLines(historySnapshot.map((e) => e.text), currentSessionLanguage)
+    .then((out) => { if (generation === segmentationGeneration) lineTranslations = out; })
+    .catch((err) => console.error("[VoiceCoach] transcript translation failed:", err))
+    .finally(() => {
+      if (generation !== segmentationGeneration) return;
+      translationsPending = false;
+      renderTranscriptReviewBody();
+    });
   renderTranscriptReviewBody();
   $("trAnalyzing").classList.remove("hidden");
   $("trBody").classList.add("analyzing");
@@ -2618,7 +2962,10 @@ function renderTranscriptReviewBody() {
   transcriptHistory.forEach((entry, i) => {
     const bubble = document.createElement("div");
     bubble.className = `bubble ${entry.role}`;
-    const parts = (segmentCache[i] && segmentCache[i][segmentMode]) || [entry.text];
+    // Translation mode still segments by word, so everything stays tappable;
+    // the English is appended underneath rather than replacing the original.
+    const partMode = segmentMode === "translation" ? "words" : segmentMode;
+    const parts = (segmentCache[i] && segmentCache[i][partMode]) || [entry.text];
     let seg = 0;
     parts.forEach((part) => {
       const clean = cleanWord(part);
@@ -2635,6 +2982,12 @@ function renderTranscriptReviewBody() {
       }
       bubble.appendChild(span);
     });
+    if (segmentMode === "translation") {
+      const en = document.createElement("div");
+      en.className = "tr-en";
+      en.textContent = lineTranslations[i] || (translationsPending ? "Translating…" : "—");
+      bubble.appendChild(en);
+    }
     body.appendChild(bubble);
   });
 }
@@ -2646,7 +2999,11 @@ function markWordAdded(word) {
 $("trBody").addEventListener("click", (e) => {
   const span = e.target.closest(".word");
   if (!span || span.classList.contains("no-select")) return;
-  openWordModal(span.dataset.word, span.dataset.context);
+  openWordModal(
+    span.dataset.word,
+    span.dataset.context,
+    lineTranslations[Number(span.dataset.lineIndex)] || ""
+  );
 });
 
 $("segToggle").addEventListener("click", (e) => {
@@ -2856,13 +3213,18 @@ $("deepDiveInput").addEventListener("keydown", (e) => {
   }
 });
 
-async function openWordModal(word, context) {
+async function openWordModal(word, context, contextTranslation) {
   const generation = ++wordAudioGeneration;
   editingCardId = null;
   $("wordModalTitle").textContent = "Add flashcard";
   $("saveWordBtn").textContent = "Save flashcard";
   $("wordInput").value = word;
   $("wordContextInput").value = context;
+  // Hidden for an English session, where the sentence needs no translating.
+  const wantsContextEn = currentSessionLanguage !== "en";
+  $("wordContextEnField").classList.toggle("hidden", !wantsContextEn);
+  $("wordContextEnInput").value = contextTranslation || "";
+  $("wordContextEnInput").placeholder = translationsPending ? "Translating…" : "";
   $("wordTranslationInput").value = "";
   $("wordTranslationInput").placeholder = "Translating…";
   $("wordPronunciationInput").value = "";
@@ -2884,6 +3246,11 @@ async function openWordModal(word, context) {
     });
   const audioPromise = prepareSelectedWordAudio(word, generation);
   await Promise.allSettled([translationPromise, audioPromise]);
+  if (generation === wordAudioGeneration && !$("wordContextEnInput").value.trim()) {
+    const lateEn = lineTranslations[transcriptHistory.findIndex((e) => e.text === context)];
+    if (lateEn) $("wordContextEnInput").value = lateEn;
+    $("wordContextEnInput").placeholder = "";
+  }
   if (generation === wordAudioGeneration) $("saveWordBtn").disabled = false;
 }
 
@@ -2902,6 +3269,9 @@ async function openEditCardModal(card) {
   $("wordTranslationInput").placeholder = "";
   $("wordPronunciationInput").value = card.pronunciation || "";
   $("wordContextInput").value = card.context || "";
+  $("wordContextEnField").classList.toggle("hidden", (card.lang || "en") === "en");
+  $("wordContextEnInput").value = card.contextTranslation || "";
+  $("wordContextEnInput").placeholder = "";
   $("saveWordBtn").disabled = false;
   resetDeepDive(card.lang);
   clearPendingAudioPreview();
@@ -2937,6 +3307,7 @@ $("saveWordBtn").addEventListener("click", async () => {
   }
   const pronunciation = $("wordPronunciationInput").value.trim();
   const context = $("wordContextInput").value.trim();
+  const contextTranslation = $("wordContextEnInput").value.trim();
 
   if (editingCardId) {
     const cards = loadFlashcards();
@@ -2946,6 +3317,7 @@ $("saveWordBtn").addEventListener("click", async () => {
       card.translation = translation;
       card.pronunciation = pronunciation;
       card.context = context;
+      card.contextTranslation = contextTranslation;
       saveFlashcards(cards);
       renderFlashcardsScreen();
     }
@@ -2961,6 +3333,7 @@ $("saveWordBtn").addEventListener("click", async () => {
     translation,
     pronunciation,
     context,
+    contextTranslation,
     lang: currentSessionLanguage,
     createdAt: Date.now(),
     ease: 2.5,
@@ -2997,83 +3370,141 @@ function updateDueBadge() {
   badge.classList.toggle("hidden", n === 0);
 }
 
-// Which language folders are collapsed, keyed by language code — kept
-// outside renderFlashcardsScreen() so the fold state survives re-renders
-// (deleting a card, playing audio, finishing a review, etc all re-render).
-let collapsedFolders = new Set();
+// A card is "mastered" once its interval reaches three weeks — the same
+// mature-card threshold Anki uses — and "learning" any time before that.
+const MASTERED_INTERVAL = 21;
+
+function cardState(card) {
+  if (!card.reps) return "new";
+  return card.interval >= MASTERED_INTERVAL ? "mastered" : "learning";
+}
+
+// Counts for one deck: the split of what's due today, and of the whole deck.
+function deckStats(cards) {
+  const today = todayStr(0);
+  const s = { total: cards.length, due: 0, dueNew: 0, dueLearning: 0, dueMastered: 0,
+              totNew: 0, totLearning: 0, totMastered: 0 };
+  cards.forEach((card) => {
+    const state = cardState(card);
+    if (state === "new") s.totNew += 1;
+    else if (state === "learning") s.totLearning += 1;
+    else s.totMastered += 1;
+    if (card.due <= today) {
+      s.due += 1;
+      if (state === "new") s.dueNew += 1;
+      else if (state === "learning") s.dueLearning += 1;
+      else s.dueMastered += 1;
+    }
+  });
+  return s;
+}
+
+function cardsByLang() {
+  const byLang = new Map();
+  loadFlashcards().forEach((card) => {
+    const lang = card.lang || "en";
+    if (!byLang.has(lang)) byLang.set(lang, []);
+    byLang.get(lang).push(card);
+  });
+  return byLang;
+}
+
+// "decks" (the list) or "deck" (one deck's detail screen).
+let cardsView = "decks";
+let activeDeckLang = null;
 
 function renderFlashcardsScreen() {
-  const cards = loadFlashcards();
-  const due = dueCount(cards);
-  $("fcSummary").textContent = `${due} due today · ${cards.length} total`;
   updateDueBadge();
+  const inDeck = cardsView === "deck" && activeDeckLang;
+  $("fcDecksView").classList.toggle("hidden", !!inDeck);
+  $("fcDeckView").classList.toggle("hidden", !inDeck);
+  if (inDeck) renderDeckView(); else renderDecksView();
+}
 
-  const listEl = $("fcList");
+function renderDecksView() {
+  const cards = loadFlashcards();
+  $("fcSummary").textContent = `${dueCount(cards)} due today · ${cards.length} total`;
+
+  const listEl = $("fcDeckList");
   listEl.innerHTML = "";
   if (!cards.length) {
     listEl.innerHTML = '<div class="transcript-empty">No flashcards yet — end a session to add some.</div>';
     return;
   }
-  const today = todayStr(0);
-
-  const byLang = new Map();
-  cards.forEach((card) => {
-    const lang = card.lang || "en";
-    if (!byLang.has(lang)) byLang.set(lang, []);
-    byLang.get(lang).push(card);
-  });
-
+  const byLang = cardsByLang();
   Array.from(byLang.keys())
     .sort((a, b) => languageName(a).localeCompare(languageName(b)))
     .forEach((lang) => {
-      const langCards = byLang.get(lang).slice().sort((a, b) => a.due.localeCompare(b.due));
-      const langDue = langCards.filter((c) => c.due <= today).length;
-
-      const folder = document.createElement("div");
-      folder.className = `fc-folder${collapsedFolders.has(lang) ? " collapsed" : ""}`;
-
-      const header = document.createElement("div");
-      header.className = "fc-folder-header";
-      header.innerHTML = `
-        <button type="button" class="fc-folder-toggle">
-          <svg class="fc-folder-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-          <span class="fc-folder-name">${escapeHtml(languageName(lang))}</span>
-          <span class="fc-folder-count">${langDue ? `${langDue} due · ` : ""}${langCards.length}</span>
-        </button>
-        <button type="button" class="fc-folder-review-btn" data-lang="${lang}" ${langDue === 0 ? "disabled" : ""}>Review</button>
+      const stats = deckStats(byLang.get(lang));
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "fc-deck-row";
+      row.dataset.lang = lang;
+      row.innerHTML = `
+        <div class="fc-deck-row-main">
+          <div class="fc-deck-row-name">${escapeHtml(languageName(lang))}</div>
+          <div class="fc-deck-row-sub${stats.due ? " is-due" : ""}">${
+            stats.due
+              ? `Cards for today: ${stats.due}`
+              : `All caught up · ${stats.total} card${stats.total === 1 ? "" : "s"}`
+          }</div>
+        </div>
+        <svg class="fc-deck-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
       `;
-      header.querySelector(".fc-folder-toggle").addEventListener("click", () => {
-        if (collapsedFolders.has(lang)) collapsedFolders.delete(lang); else collapsedFolders.add(lang);
-        folder.classList.toggle("collapsed");
-      });
-      header.querySelector(".fc-folder-review-btn").addEventListener("click", () => openReviewSession(lang));
-      folder.appendChild(header);
-
-      const rows = document.createElement("div");
-      rows.className = "fc-folder-rows";
-      langCards.forEach((card) => {
-        const row = document.createElement("div");
-        row.className = "fc-row";
-        row.dataset.id = card.id;
-        const isDue = card.due <= today;
-        row.innerHTML = `
-          <div class="fc-row-main">
-            <div class="fc-word">${escapeHtml(card.word)}</div>
-            ${card.pronunciation ? `<div class="fc-pronunciation">${escapeHtml(card.pronunciation)}</div>` : ""}
-            <div class="fc-translation">${escapeHtml(card.translation)}</div>
-          </div>
-          ${card.hasAudio ? `
-          <button class="play-btn fc-play" data-id="${card.id}" aria-label="Play audio" title="Play audio">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-          </button>` : ""}
-          <div class="fc-due${isDue ? " is-due" : ""}">${isDue ? "Due" : card.due}</div>
-          <button class="fc-delete" data-id="${card.id}" aria-label="Delete flashcard">✕</button>
-        `;
-        rows.appendChild(row);
-      });
-      folder.appendChild(rows);
-      listEl.appendChild(folder);
+      listEl.appendChild(row);
     });
+}
+
+function openDeck(lang) {
+  cardsView = "deck";
+  activeDeckLang = lang;
+  renderFlashcardsScreen();
+}
+
+function renderDeckView() {
+  const cards = (cardsByLang().get(activeDeckLang) || [])
+    .slice()
+    .sort((a, b) => a.due.localeCompare(b.due) || a.createdAt - b.createdAt);
+  if (!cards.length) { // last card in the deck was deleted
+    cardsView = "decks";
+    activeDeckLang = null;
+    renderFlashcardsScreen();
+    return;
+  }
+  const stats = deckStats(cards);
+  $("fcDeckTitle").textContent = languageName(activeDeckLang);
+  $("fcHeroCount").textContent = String(stats.due);
+  $("fcDueNew").textContent = String(stats.dueNew);
+  $("fcDueLearning").textContent = String(stats.dueLearning);
+  $("fcDueMastered").textContent = String(stats.dueMastered);
+  $("fcStudyBtn").disabled = stats.due === 0;
+  $("fcStudyBtn").textContent = stats.due ? "Study cards" : "Nothing due today";
+
+  $("fcDeckTotal").textContent = String(stats.total);
+  $("fcTotNew").textContent = String(stats.totNew);
+  $("fcTotLearning").textContent = String(stats.totLearning);
+  $("fcTotMastered").textContent = String(stats.totMastered);
+  $("fcBarLearning").style.width = `${(stats.totLearning / stats.total) * 100}%`;
+  $("fcBarMastered").style.width = `${(stats.totMastered / stats.total) * 100}%`;
+
+  const today = todayStr(0);
+  $("fcRows").innerHTML = cards.map((card) => {
+    const isDue = card.due <= today;
+    return `
+      <div class="fc-row" data-id="${escapeHtml(card.id)}">
+        <div class="fc-row-main">
+          <div class="fc-word">${escapeHtml(card.word)}</div>
+          ${card.pronunciation ? `<div class="fc-pronunciation">${escapeHtml(card.pronunciation)}</div>` : ""}
+          <div class="fc-translation">${escapeHtml(card.translation)}</div>
+        </div>
+        ${card.hasAudio ? `
+        <button class="play-btn fc-play" data-id="${escapeHtml(card.id)}" aria-label="Play audio" title="Play audio">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>` : ""}
+        <div class="fc-due${isDue ? " is-due" : ""}">${isDue ? "Due" : escapeHtml(card.due)}</div>
+        <button class="fc-delete" data-id="${escapeHtml(card.id)}" aria-label="Delete flashcard">✕</button>
+      </div>`;
+  }).join("");
 }
 
 async function playCardAudio(id) {
@@ -3088,7 +3519,20 @@ async function playCardAudio(id) {
   }
 }
 
-$("fcList").addEventListener("click", (e) => {
+$("fcDeckList").addEventListener("click", (e) => {
+  const row = e.target.closest(".fc-deck-row");
+  if (row) openDeck(row.dataset.lang);
+});
+
+$("fcBackBtn").addEventListener("click", () => {
+  cardsView = "decks";
+  activeDeckLang = null;
+  renderFlashcardsScreen();
+});
+
+$("fcStudyBtn").addEventListener("click", () => openReviewSession(activeDeckLang));
+
+$("fcRows").addEventListener("click", (e) => {
   const deleteBtn = e.target.closest(".fc-delete");
   if (deleteBtn) {
     saveFlashcards(loadFlashcards().filter((c) => c.id !== deleteBtn.dataset.id));
@@ -3108,11 +3552,27 @@ $("fcList").addEventListener("click", (e) => {
   }
 });
 
+/* ---------------------------------------------------------------------- */
+/* Review session (full screen)                                           */
+/* ---------------------------------------------------------------------- */
+
 let reviewQueue = [];
 let reviewIndex = 0;
 
-// lang is required so mixed-language reviews never happen by accident —
-// each language folder gets its own Review button (see renderFlashcardsScreen).
+// What scheduleCard() would do for this grade, without touching the card —
+// shown under each button so the next interval is visible before answering.
+function previewGrade(card, grade) {
+  const probe = Object.assign({}, card);
+  scheduleCard(probe, grade);
+  if (grade === 0) return "Today";
+  const days = probe.interval;
+  if (days <= 1) return "1d";
+  if (days < 30) return `${days}d`;
+  if (days < 365) return `${(days / 30).toFixed(1)}mo`;
+  return `${(days / 365).toFixed(1)}y`;
+}
+
+// lang is required so mixed-language reviews never happen by accident.
 function openReviewSession(lang) {
   const today = todayStr(0);
   reviewQueue = loadFlashcards()
@@ -3120,22 +3580,35 @@ function openReviewSession(lang) {
     .sort((a, b) => a.due.localeCompare(b.due) || a.createdAt - b.createdAt);
   if (!reviewQueue.length) return;
   reviewIndex = 0;
-  $("reviewModal").classList.remove("hidden");
+  $("reviewScreen").classList.remove("hidden");
   showReviewCard();
+}
+
+function closeReviewSession() {
+  $("reviewScreen").classList.add("hidden");
+  renderFlashcardsScreen();
 }
 
 function showReviewCard() {
   const card = reviewQueue[reviewIndex];
-  $("reviewProgress").textContent = `${reviewIndex + 1} / ${reviewQueue.length}`;
+  $("reviewProgress").innerHTML = `<b>${reviewIndex}</b>/${reviewQueue.length}`;
+  $("reviewTrackFill").style.width = `${(reviewIndex / reviewQueue.length) * 100}%`;
+
   $("reviewWord").textContent = card.word;
   $("reviewPlayBtn").classList.toggle("hidden", !card.hasAudio);
   $("reviewPlayBtn").dataset.id = card.id;
+
   $("reviewPronunciation").textContent = card.pronunciation || "";
   $("reviewPronunciation").classList.toggle("hidden", !card.pronunciation);
-  $("reviewContext").textContent = card.context || "";
-  $("reviewContext").classList.add("hidden");
   $("reviewTranslation").textContent = card.translation;
-  $("reviewTranslation").classList.add("hidden");
+  $("reviewContext").textContent = card.context || "";
+  $("reviewContext").classList.toggle("hidden", !card.context);
+  $("reviewContextEn").textContent = card.contextTranslation || "";
+  $("reviewContextEn").classList.toggle("hidden", !card.contextTranslation);
+
+  [0, 1, 2, 3].forEach((g) => { $(`gradeWhen${g}`).textContent = previewGrade(card, g); });
+
+  $("reviewBack").classList.add("hidden");
   $("reviewGrades").classList.add("hidden");
   $("revealBtn").classList.remove("hidden");
 }
@@ -3145,11 +3618,18 @@ $("reviewPlayBtn").addEventListener("click", () => {
   if (id) playCardAudio(id);
 });
 
-$("revealBtn").addEventListener("click", () => {
-  $("reviewContext").classList.remove("hidden");
-  $("reviewTranslation").classList.remove("hidden");
+function revealReviewCard() {
+  $("reviewBack").classList.remove("hidden");
   $("reviewGrades").classList.remove("hidden");
   $("revealBtn").classList.add("hidden");
+}
+
+$("revealBtn").addEventListener("click", revealReviewCard);
+
+// The whole card is a reveal target too — the footer button is just the label.
+$("reviewCard").addEventListener("click", (e) => {
+  if (e.target.closest("#reviewPlayBtn")) return;
+  if ($("reviewBack").classList.contains("hidden")) revealReviewCard();
 });
 
 $("reviewGrades").addEventListener("click", (e) => {
@@ -3163,18 +3643,11 @@ $("reviewGrades").addEventListener("click", (e) => {
     saveFlashcards(cards);
   }
   reviewIndex += 1;
-  if (reviewIndex >= reviewQueue.length) {
-    $("reviewModal").classList.add("hidden");
-    renderFlashcardsScreen();
-  } else {
-    showReviewCard();
-  }
+  if (reviewIndex >= reviewQueue.length) closeReviewSession();
+  else showReviewCard();
 });
 
-$("closeReviewBtn").addEventListener("click", () => {
-  $("reviewModal").classList.add("hidden");
-  renderFlashcardsScreen();
-});
+$("closeReviewBtn").addEventListener("click", closeReviewSession);
 
 /* ---------------------------------------------------------------------- */
 /* UI wiring                                                              */
@@ -3323,7 +3796,11 @@ function switchTab(tab) {
   $("tabCardsBtn").classList.toggle("active", tab === "cards");
   $("mainScreen").classList.toggle("hidden", tab !== "coach");
   $("flashcardsScreen").classList.toggle("hidden", tab !== "cards");
-  if (tab === "cards") renderFlashcardsScreen();
+  if (tab === "cards") {
+    cardsView = "decks";
+    activeDeckLang = null;
+    renderFlashcardsScreen();
+  }
 }
 
 function openMain() {
