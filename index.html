@@ -478,6 +478,38 @@
   }
   .status.is-error{ color:var(--danger); }
 
+  /* ---------- reply suggestions ---------- */
+  .suggestions{
+    flex-shrink:0;
+    width:100%;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .suggestion{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:9px 13px;
+  }
+  .suggestion-text{ font-size:14px; line-height:1.35; }
+  .suggestion-translation{
+    font-size:12px;
+    color:var(--dim);
+    margin-top:3px;
+    line-height:1.35;
+  }
+  .suggestions-status{
+    font-size:12px;
+    color:var(--dim);
+    text-align:center;
+    font-style:italic;
+  }
+
+  .check-row{ display:flex; align-items:center; gap:10px; cursor:pointer; }
+  .check-row input{ width:18px; height:18px; flex-shrink:0; accent-color:var(--accent2); cursor:pointer; }
+  .check-row span{ font-size:14px; }
+
   .controls{
     display:flex;
     gap:20px;
@@ -499,13 +531,25 @@
   .icon-btn svg{ width:20px; height:20px; }
   .icon-btn:hover{ border-color:var(--accent); color:var(--fg); }
   .icon-btn:disabled{ opacity:.4; cursor:not-allowed; }
-  .icon-btn.active{
-    background:var(--accent);
-    border-color:var(--accent);
-    color:#0a0b10;
-  }
-  .icon-btn.active:hover{ color:#0a0b10; }
   .icon-btn .icon-btn-label{ font-size:13px; font-weight:800; letter-spacing:.02em; }
+
+  /* ---------- focus mode (a call is live) ----------
+     Everything that isn't the mic or the exit button fades out and stops
+     taking taps, so mid-call the screen is just the conversation. They keep
+     their layout boxes while faded so nothing jumps around. */
+  .gear-btn,
+  .practice-bar,
+  .lang-bar,
+  .tab-nav{ transition:opacity .35s ease, border-color .35s ease; }
+  .app.focus-mode .gear-btn,
+  .app.focus-mode .practice-bar,
+  .app.focus-mode .lang-bar,
+  .app.focus-mode .tab-nav{
+    opacity:0;
+    pointer-events:none;
+  }
+  .app.focus-mode .lang-bar,
+  .app.focus-mode .tab-nav{ border-top-color:transparent; }
 
   /* ---------- practice bar (top of the coach screen) ---------- */
   .practice-bar{
@@ -991,12 +1035,28 @@
     gap:12px;
   }
   .review-rule{ width:100%; height:1px; background:var(--border); }
-  .review-pronunciation{ font-size:22px; color:var(--fg); }
+  /* Front-of-card hint: dimmer than the word above it, so revealing it reads
+     as help rather than as the answer. */
+  .review-pronunciation{ font-size:22px; color:var(--accent2); font-style:italic; }
   .review-translation{ font-size:19px; color:var(--accent2); }
   .review-context{ font-size:13px; color:var(--dim); line-height:1.5; }
   .review-context-en{ font-size:13px; color:var(--dim); font-style:italic; line-height:1.5; }
 
   .review-foot{ flex-shrink:0; padding:14px 12px calc(14px + env(safe-area-inset-bottom)); }
+  .review-hint{
+    display:block;
+    margin:0 auto 4px;
+    padding:8px 16px;
+    background:transparent;
+    border:1px solid var(--border);
+    border-radius:999px;
+    color:var(--dim);
+    font-family:inherit;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .review-hint:hover{ color:var(--fg); border-color:var(--accent2); }
   .review-reveal{
     width:100%;
     padding:16px;
@@ -1110,6 +1170,14 @@
     </div>
 
     <div class="field">
+      <label class="check-row" for="suggestionsInput">
+        <input type="checkbox" id="suggestionsInput" checked />
+        <span>Reply suggestions</span>
+      </label>
+      <div class="hint" style="margin-top:6px;">During a call, show a few things you could say next, with English translations.</div>
+    </div>
+
+    <div class="field">
       <label for="instructionsInput">Personality / system instructions</label>
       <textarea id="instructionsInput" spellcheck="false">You are a warm, direct voice coach. Keep replies short and conversational — this is a spoken conversation, not an essay. Ask one focused question at a time.</textarea>
     </div>
@@ -1142,17 +1210,17 @@
       </div>
     </div>
 
+    <!-- Things the learner could say next, each with an English gloss.
+         Filled in after the coach finishes a turn; off unless the "Reply
+         suggestions" setting is on. -->
+    <div class="suggestions hidden" id="suggestions" aria-live="polite"></div>
+
     <div class="orb-section">
       <div class="status" id="statusText">Tap to start</div>
 
-      <!-- Mic sits between the EN and end-session buttons: a small control row
-           rather than a hero orb, so the transcript gets the rest of the screen. -->
+      <!-- Mic sits next to the end-session button: a small control row rather
+           than a hero orb, so the transcript gets the rest of the screen. -->
       <div class="controls">
-        <button class="icon-btn" id="englishHelpBtn" disabled aria-pressed="false"
-                title="Ask for help in English" aria-label="Ask for help in English">
-          <span class="icon-btn-label">EN</span>
-        </button>
-
         <div class="orb-wrap">
           <div class="orb-ring"></div>
           <button class="orb" id="orbBtn" aria-label="Start talking">
@@ -1299,8 +1367,9 @@
       <input type="text" id="wordTranslationInput" spellcheck="false" placeholder="Translating…" />
     </div>
     <div class="field">
-      <label for="wordPronunciationInput">Pronunciation (optional)</label>
-      <input type="text" id="wordPronunciationInput" spellcheck="false" placeholder="e.g. pinyin or romaji" />
+      <label for="wordPronunciationInput">Phonetic respelling</label>
+      <input type="text" id="wordPronunciationInput" spellcheck="false" placeholder="e.g. koh-NEE-chee-wah" />
+      <div class="hint" style="margin-top:6px;">Shown as the hint when you're stuck during review.</div>
     </div>
     <div class="field">
       <label for="wordContextInput">Context</label>
@@ -1311,9 +1380,12 @@
       <textarea id="wordContextEnInput" spellcheck="false" style="min-height:60px;"></textarea>
       <div class="hint" style="margin-top:6px;">Saved with the card, so the sentence still makes sense at review time.</div>
     </div>
-    <div class="field hidden" id="wordAudioField">
+    <div class="field" id="wordAudioField">
       <label>Audio clip</label>
       <audio id="wordAudioPreview" controls style="width:100%; height:36px;"></audio>
+      <button class="btn btn-ghost" id="regenerateAudioBtn" style="padding:9px 14px; font-size:13px; margin-top:8px;">
+        Regenerate audio
+      </button>
     </div>
     <div class="hint hidden" id="wordAudioStatus" aria-live="polite"></div>
 
@@ -1353,13 +1425,15 @@
 
   <div class="review-card" id="reviewCard">
     <div class="review-word" id="reviewWord"></div>
+    <!-- The hint. Sits on the front of the card, hidden until asked for, so
+         it can help without also showing the answer below it. -->
+    <div class="review-pronunciation hidden" id="reviewPronunciation"></div>
     <button class="review-audio-btn hidden" id="reviewPlayBtn" aria-label="Play audio">
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4h4l5 4V6L7 10H3zm13.5 2a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a6.8 6.8 0 0 1 0 13.4v2.1a8.9 8.9 0 0 0 0-17.6z"/></svg>
     </button>
 
     <div class="review-back hidden" id="reviewBack">
       <div class="review-rule"></div>
-      <div class="review-pronunciation hidden" id="reviewPronunciation"></div>
       <div class="review-translation" id="reviewTranslation"></div>
       <div class="review-context hidden" id="reviewContext"></div>
       <div class="review-context-en hidden" id="reviewContextEn"></div>
@@ -1367,6 +1441,7 @@
   </div>
 
   <div class="review-foot">
+    <button class="review-hint" id="hintBtn">Get a hint</button>
     <button class="review-reveal" id="revealBtn">Tap to show answer</button>
     <div class="review-grades hidden" id="reviewGrades">
       <button class="grade-btn again" data-grade="0">Again<span class="grade-when" id="gradeWhen0"></span></button>
@@ -1478,6 +1553,13 @@
         <option value="nova">Nova</option>
         <option value="shimmer">Shimmer</option>
       </select>
+    </div>
+    <div class="field">
+      <label class="check-row" for="s_suggestionsInput">
+        <input type="checkbox" id="s_suggestionsInput" />
+        <span>Reply suggestions</span>
+      </label>
+      <div class="hint" style="margin-top:6px;">During a call, show a few things you could say next, with English translations.</div>
     </div>
     <div class="field">
       <label for="s_instructionsInput">Personality / system instructions</label>
@@ -1831,35 +1913,9 @@ function guidedFrame(name, scene) {
   return text;
 }
 
-// The learner tapped EN. This is the one thing that can pull the coach out of
-// a scene, because it is an explicit request from the UI rather than something
-// said inside the conversation (which stays in character — see sceneFrame).
-function englishAssistFrame(name, scene) {
-  const base =
-    `The learner has asked for help in English. You may speak English for ` +
-    `now: explain what they're stuck on, give them the ${name} words or ` +
-    `phrasing they need, and help them understand. Keep it short and ` +
-    `spoken. When you give ${name} examples, say them in ${name}. Stay in ` +
-    `this helping mode until told otherwise.`;
-  if (!scene) return base;
-  return base + `\n\nYou are part-way through the situation described below. Step out of ` +
-    `it for as long as they need — it is fine to acknowledge the scene now, because they ` +
-    `asked you to. When they are ready, slide back into character as ${scene.role} and ` +
-    `pick the scene up where it left off.`;
-}
-
 // Role-play frame. In immersion the character is absolute; in a guided call
 // the coach is openly switching between playing the part and explaining.
-function sceneFrame(scene, name, style, assistInEnglish) {
-  if (assistInEnglish) {
-    return [
-      `SITUATION — ${scene.name}. Paused: the learner has asked for help in English.`,
-      `In this scene you play ${scene.role}. ${scene.setting}`,
-      `What you were working towards: ${scene.goal}`,
-      `Do not act the scene out while you are helping in English. Pick it back up as ` +
-        `${scene.role} once they are ready.`,
-    ].join("\n");
-  }
+function sceneFrame(scene, name, style) {
   const lines = [
     `SITUATION — ${scene.name}.`,
     `You are ${scene.role}. ${scene.setting}`,
@@ -1892,37 +1948,30 @@ function sceneFrame(scene, name, style, assistInEnglish) {
 }
 
 // Composes the full instruction set for a session: which language is spoken
-// and why (immersion / guided / English help), how complex the speech should
-// be, what scene is being played, and finally the user's own personality
-// prompt. Called at session start and again whenever practice settings or the
-// EN toggle change mid-session.
-function buildInstructions(settings, assistInEnglish) {
+// and why (immersion / guided), how complex the speech should be, what scene
+// is being played, and finally the user's own personality prompt. Called at
+// session start and again whenever practice settings change mid-session.
+function buildInstructions(settings) {
   const name = languageName(settings.language);
   const practice = practiceFor(settings);
   const scene = scenarioBrief(practice);
+  const englishLed = practice.style === STYLE_GUIDED;
   const parts = [];
 
-  if (assistInEnglish) {
-    parts.push(englishAssistFrame(name, scene));
-  } else if (practice.style === STYLE_GUIDED) {
-    parts.push(guidedFrame(name, scene));
-  } else {
-    parts.push(immersionFrame(name));
-  }
+  parts.push(englishLed ? guidedFrame(name, scene) : immersionFrame(name));
 
-  const englishLed = assistInEnglish || practice.style === STYLE_GUIDED;
   parts.push(englishLed
     ? `${DIFFICULTY_LEVELS[practice.level - 1].prompt}\n(This governs the ${name} you ` +
       `speak and teach. Your English stays natural.)`
     : DIFFICULTY_LEVELS[practice.level - 1].prompt);
 
-  if (scene) parts.push(sceneFrame(scene, name, practice.style, assistInEnglish));
+  if (scene) parts.push(sceneFrame(scene, name, practice.style));
 
   const personality = (settings.instructions || "").trim();
   if (personality) {
     // In a scene the stock "you are a voice coach" prompt would contradict the
     // character, so it is demoted to a note about delivery rather than role.
-    parts.push(scene && !assistInEnglish && practice.style !== STYLE_GUIDED
+    parts.push(scene && !englishLed
       ? `PERSONALITY — bring this to the character you are playing, without stepping out ` +
         `of the scene:\n${personality}`
       : personality);
@@ -1938,19 +1987,19 @@ function needsSceneKickoff(settings) {
   return practice.style === STYLE_GUIDED || !!scenarioBrief(practice);
 }
 
-// Languages whose script isn't easily sounded out by a Latin-alphabet
-// reader — worth a romanized pronunciation guide on the flashcard.
-const NEEDS_PRONUNCIATION = ["ja", "zh", "ko", "ru", "ta", "ur"];
-
-function pronunciationSystemForLanguage(langCode) {
-  if (langCode === "zh") return "Hanyu Pinyin with tone marks";
-  if (langCode === "ja") return "romaji";
-  if (langCode === "ko") return "revised romanization";
-  if (langCode === "ru") return "standard Latin transliteration";
-  if (langCode === "ta") return "ISO 15919 Latin transliteration";
-  if (langCode === "ur") return "clear Latin transliteration";
-  return "";
-}
+// Every card carries a phonetic respelling — the same sound-it-out English
+// spelling the guided call teaches with, not a scholarly romanization. It
+// doubles as the review hint, so it has to be readable cold by someone who
+// can't read the script at all. Generated for every language, Latin-script
+// ones included, since a familiar script still doesn't tell you where the
+// stress falls.
+const PHONETIC_SPEC =
+  `a phonetic respelling that lets an English speaker say it out loud ` +
+  `correctly: lowercase syllables separated by hyphens, with the stressed ` +
+  `syllable in CAPITALS where the language has stress (for example ` +
+  `"koh-NEE-chee-wah", "oh-LAH", "BON-zhoor") and evenly weighted syllables ` +
+  `where it does not. Use plain English spelling patterns only — no IPA, no ` +
+  `tone numbers, no diacritics. Always provide one, for every language.`;
 
 // One-off text completion (not the realtime session) to translate a single
 // selected word/phrase into English, using its source sentence for context.
@@ -1959,7 +2008,6 @@ function pronunciationSystemForLanguage(langCode) {
 async function translateWord(word, context, langCode) {
   const settings = loadSettings();
   const sourceLang = languageName(langCode);
-  const needsPronunciation = NEEDS_PRONUNCIATION.includes(langCode);
   const resp = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -1978,11 +2026,7 @@ async function translateWord(word, context, langCode) {
             `and its source sentence for context, respond with strict JSON: ` +
             `{"translation": "...", "pronunciation": "..."}. "translation" is the ` +
             `English translation — or, if the word is already English, a brief ` +
-            `one-line definition instead. ` +
-            (needsPronunciation
-              ? `"pronunciation" must be the ${pronunciationSystemForLanguage(langCode)} ` +
-                `reading of the word — this matters since the script isn't easily read by foreigners.`
-              : `Set "pronunciation" to an empty string, since ${sourceLang} already uses a familiar script.`) +
+            `one-line definition instead. "pronunciation" is ${PHONETIC_SPEC}` +
             ` No extra text outside the JSON object.`,
         },
         { role: "user", content: `Sentence: ${context}\nWord: ${word}` },
@@ -2001,6 +2045,41 @@ async function translateWord(word, context, langCode) {
     translation: (parsed.translation || "").trim(),
     pronunciation: (parsed.pronunciation || "").trim(),
   };
+}
+
+// Just the respelling — used to backfill cards saved before every language
+// got one, so an old card still has a hint to offer at review time.
+async function generatePhonetic(word, langCode) {
+  const settings = loadSettings();
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${settings.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            `Given a ${languageName(langCode)} word or short phrase, respond with ` +
+            `strict JSON: {"pronunciation": "..."} where "pronunciation" is ` +
+            `${PHONETIC_SPEC} No extra text outside the JSON object.`,
+        },
+        { role: "user", content: word },
+      ],
+    }),
+  });
+  if (!resp.ok) throw new Error(`Phonetic request failed (${resp.status})`);
+  const data = await resp.json();
+  try {
+    return (JSON.parse(data?.choices?.[0]?.message?.content || "{}").pronunciation || "").trim();
+  } catch (e) {
+    return "";
+  }
 }
 
 // Markers the segmentation prompt inserts at boundaries — chosen to be
@@ -2265,8 +2344,14 @@ function setState(state, errorDetail) {
   $("orbIconMic").classList.toggle("hidden", isRecording);
   $("orbIconStop").classList.toggle("hidden", !isRecording);
   $("endSessionBtn").disabled = !isLive;
-  if (!isLive && englishAssist) setEnglishAssist(false);
-  refreshEnglishHelpButton();
+  setFocusMode(isLive);
+}
+
+// Once a call is live everything that isn't the mic or the exit button fades
+// out — the gear, the practice bar, the language bar, the tab nav — so the
+// screen is just the conversation. It all comes back when the call ends.
+function setFocusMode(on) {
+  appEl.classList.toggle("focus-mode", on);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -2283,7 +2368,141 @@ function clearTranscript() {
   userBubbleEl = null;
   assistantBubbleEl = null;
   transcriptHistory = [];
+  clearSuggestions();
   $("transcript").innerHTML = '<div class="transcript-empty" id="transcriptEmpty">Conversation will appear here.</div>';
+}
+
+/* ---------------------------------------------------------------------- */
+/* Reply suggestions — "here's something you could say back"              */
+/* ---------------------------------------------------------------------- */
+
+// Bumped whenever the conversation moves on, so a slow request can't paint
+// stale options over a newer turn.
+let suggestionGeneration = 0;
+
+function suggestionsEnabled() {
+  const settings = loadSettings();
+  // Undefined on saves that predate the setting — treat those as on.
+  return !!settings && settings.suggestions !== false;
+}
+
+function clearSuggestions() {
+  suggestionGeneration += 1;
+  const el = $("suggestions");
+  el.innerHTML = "";
+  el.classList.add("hidden");
+}
+
+function renderSuggestionsStatus(message) {
+  const el = $("suggestions");
+  el.innerHTML = "";
+  const status = document.createElement("div");
+  status.className = "suggestions-status";
+  status.textContent = message;
+  el.appendChild(status);
+  el.classList.remove("hidden");
+}
+
+function renderSuggestions(items) {
+  const el = $("suggestions");
+  el.innerHTML = "";
+  if (!items.length) {
+    el.classList.add("hidden");
+    return;
+  }
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "suggestion";
+    const text = document.createElement("div");
+    text.className = "suggestion-text";
+    text.textContent = item.text;
+    row.appendChild(text);
+    if (item.translation) {
+      const translation = document.createElement("div");
+      translation.className = "suggestion-translation";
+      translation.textContent = item.translation;
+      row.appendChild(translation);
+    }
+    el.appendChild(row);
+  });
+  el.classList.remove("hidden");
+}
+
+// Asks a cheap text model for a few natural replies the learner could give
+// next, in the target language with an English gloss under each. Uses the
+// tail of the transcript so the suggestions actually answer what was asked,
+// and the practice setup so they match the level and the scene being played.
+async function refreshSuggestions() {
+  if (!suggestionsEnabled()) return;
+  const settings = loadSettings();
+  if (!settings) return;
+  // Nothing to reply to until the coach has said something.
+  if (!transcriptHistory.some((e) => e.role === "assistant")) return;
+
+  const generation = ++suggestionGeneration;
+  renderSuggestionsStatus("Thinking of replies…");
+
+  const langName = languageName(currentSessionLanguage);
+  const practice = practiceFor(settings);
+  const scene = scenarioBrief(practice);
+  const recent = transcriptHistory.slice(-6)
+    .map((e) => `${e.role === "user" ? "Learner" : "Coach"}: ${e.text}`)
+    .join("\n");
+
+  try {
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${settings.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content:
+              `A learner is having a spoken ${langName} conversation with a coach. ` +
+              `Suggest 3 short, natural things the learner could say next in ` +
+              `${langName} — they must genuinely respond to the coach's last turn, ` +
+              `and should vary (for example an answer, a follow-up question, and a ` +
+              `way to say you didn't understand). One spoken sentence each.\n\n` +
+              `Match this difficulty: ${DIFFICULTY_LEVELS[practice.level - 1].prompt}\n` +
+              (scene ? `They are in this situation: ${scene.name} — ${scene.setting} ` +
+                `The coach is playing ${scene.role}, and the learner is trying to: ` +
+                `${scene.goal}\n` : "") +
+              `\nRespond with strict JSON: {"suggestions": [{"text": "...", ` +
+              `"translation": "..."}]}. "text" is the ${langName} sentence the ` +
+              `learner would say; "translation" is its plain English meaning.`,
+          },
+          { role: "user", content: recent },
+        ],
+      }),
+    });
+    if (!resp.ok) throw new Error(`Suggestion request failed (${resp.status})`);
+    const data = await resp.json();
+    let parsed;
+    try {
+      parsed = JSON.parse(data?.choices?.[0]?.message?.content || "{}");
+    } catch (e) {
+      parsed = {};
+    }
+    if (generation !== suggestionGeneration) return; // conversation moved on
+    const items = (Array.isArray(parsed.suggestions) ? parsed.suggestions : [])
+      .map((s) => ({
+        text: String(s?.text || "").trim(),
+        translation: String(s?.translation || "").trim(),
+      }))
+      .filter((s) => s.text)
+      .slice(0, 3);
+    renderSuggestions(items);
+  } catch (err) {
+    if (generation !== suggestionGeneration) return;
+    console.error("[VoiceCoach] reply suggestions failed:", err);
+    // Non-essential feature — fold it away rather than showing an error.
+    clearSuggestions();
+  }
 }
 
 function transcriptScrollToBottom() {
@@ -2352,19 +2571,14 @@ let currentMode = MODE_ECONOMY;
 let mediaRecorder = null;   // MediaRecorder (economy mode)
 let economyMessages = [];   // chat history sent to /v1/chat/completions (economy mode)
 
-// While true the coach is allowed to answer in English to help the learner
-// out. Latched on/off by the EN button rather than per-turn, so the user can
-// have a whole side conversation in English and then switch back.
-let englishAssist = false;
-
-// Pushes the current instructions — language frame, difficulty, situation and
-// the EN toggle — into whichever session is running. Realtime takes a
+// Pushes the current instructions — language frame, difficulty and situation
+// — into whichever session is running. Realtime takes a
 // session.update over the data channel; economy mode just rewrites its system
 // message, which is re-sent with every REST turn. No-op when nothing is live.
 function applySessionInstructions() {
   const settings = loadSettings();
   if (!settings) return;
-  const instructions = buildInstructions(settings, englishAssist);
+  const instructions = buildInstructions(settings);
   if (currentMode === MODE_REALTIME) {
     if (dc && dc.readyState === "open") {
       dc.send(JSON.stringify({
@@ -2375,15 +2589,6 @@ function applySessionInstructions() {
   } else if (economyMessages.length && economyMessages[0].role === "system") {
     economyMessages[0].content = instructions;
   }
-}
-
-function setEnglishAssist(on) {
-  englishAssist = on;
-  const btn = $("englishHelpBtn");
-  btn.classList.toggle("active", on);
-  btn.setAttribute("aria-pressed", String(on));
-  applySessionInstructions();
-  refreshEnglishHelpButton();
 }
 
 // Economy mode records the user's turn to send to the transcription
@@ -2411,9 +2616,6 @@ async function startSession() {
   clearTranscript();
   currentSessionLanguage = settings.language || "en";
   currentMode = settings.mode || MODE_ECONOMY;
-  englishAssist = false; // every session starts locked to the target language
-  $("englishHelpBtn").classList.remove("active");
-  $("englishHelpBtn").setAttribute("aria-pressed", "false");
   setState("connecting");
 
   try {
@@ -2446,7 +2648,7 @@ async function startRealtimeSession(settings) {
       session: {
         type: "realtime",
         model: settings.model,
-        instructions: buildInstructions(settings, englishAssist),
+        instructions: buildInstructions(settings),
         audio: {
           output: { voice: settings.voice },
           input: {
@@ -2494,7 +2696,7 @@ async function startRealtimeSession(settings) {
       type: "session.update",
       session: {
         type: "realtime",
-        instructions: buildInstructions(settings, englishAssist),
+        instructions: buildInstructions(settings),
         audio: {
           output: { voice: settings.voice },
           input: {
@@ -2551,6 +2753,7 @@ function realtimeBeginRecording() {
   if (!dc || !localStream) return;
   dc.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
   bubbleFor("user"); // reserve the DOM slot now, before any transcript text arrives
+  clearSuggestions(); // they answered the coach's previous turn
   localStream.getTracks().forEach((t) => { t.enabled = true; });
   setState("user_speaking");
 }
@@ -2602,6 +2805,7 @@ function handleRealtimeEvent(event) {
     case "response.done":
       setTranscriptFinal("assistant"); // safety net if the .done transcript event above didn't fire
       setState("ready");
+      refreshSuggestions(); // the coach just asked something — offer replies
       break;
     case "error":
       console.error("[VoiceCoach] realtime error event:", msg);
@@ -2619,13 +2823,14 @@ function handleRealtimeEvent(event) {
 
 async function startEconomySession(settings) {
   localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  economyMessages = [{ role: "system", content: buildInstructions(settings, englishAssist) }];
+  economyMessages = [{ role: "system", content: buildInstructions(settings) }];
   setState("ready");
 }
 
 function economyBeginRecording() {
   if (!localStream) return;
   bubbleFor("user"); // reserve the DOM slot now, before transcription resolves
+  clearSuggestions(); // they answered the coach's previous turn
   mediaRecorder = new MediaRecorder(localStream, recordingOptions());
   mediaRecorder._chunks = [];
   mediaRecorder.addEventListener("dataavailable", (e) => {
@@ -2672,6 +2877,10 @@ async function processEconomyTurn(chunks, mimeType) {
     const replyText = await economyChat(settings);
     economyMessages.push({ role: "assistant", content: replyText });
     setTranscriptFinal("assistant", replyText);
+
+    // Runs alongside the TTS request so the replies are on screen by the time
+    // the coach stops talking, rather than a beat after.
+    refreshSuggestions();
 
     setState("assistant_speaking");
     const speech = await economySpeak(replyText, settings);
@@ -2789,6 +2998,7 @@ function endSession(silent) {
   pc = null;
   localStream = null;
   mediaRecorder = null;
+  clearSuggestions();
   if (!silent) setState("idle");
 }
 
@@ -3035,7 +3245,8 @@ function clearPendingAudioPreview() {
   pendingAudioUrl = null;
   pendingAudioBlob = null;
   $("wordAudioPreview").src = "";
-  $("wordAudioField").classList.add("hidden");
+  // The field itself stays visible even with no clip loaded, so Regenerate is
+  // always reachable — TTS failing is exactly when you need that button.
   $("wordAudioStatus").textContent = "";
   $("wordAudioStatus").classList.add("hidden");
 }
@@ -3052,6 +3263,49 @@ function setPendingAudioPreview(blob) {
   $("wordAudioPreview").src = pendingAudioUrl;
   $("wordAudioField").classList.remove("hidden");
 }
+
+// TTS occasionally comes back empty or garbled, so both new and saved cards
+// get a manual retry. For a card that already exists the new clip is written
+// straight to IndexedDB; for one still being created it just replaces the
+// pending blob, which the save path persists as usual.
+async function regenerateWordAudio() {
+  const word = $("wordInput").value.trim();
+  if (!word) {
+    showWordAudioStatus("Enter a word first.");
+    return;
+  }
+  const btn = $("regenerateAudioBtn");
+  const generation = ++wordAudioGeneration;
+  btn.disabled = true;
+  showWordAudioStatus("Regenerating audio…");
+  try {
+    const blob = await synthesizeSelectedWord(word);
+    if (generation !== wordAudioGeneration) return;
+    setPendingAudioPreview(blob);
+
+    if (editingCardId) {
+      await saveAudioClip(editingCardId, blob);
+      const cards = loadFlashcards();
+      const card = cards.find((c) => c.id === editingCardId);
+      if (card) {
+        card.hasAudio = true;
+        saveFlashcards(cards);
+        renderFlashcardsScreen();
+      }
+      showWordAudioStatus("Audio regenerated and saved.");
+    } else {
+      showWordAudioStatus("Audio regenerated.");
+    }
+  } catch (err) {
+    if (generation !== wordAudioGeneration) return;
+    console.error("[VoiceCoach] audio regeneration failed:", err);
+    showWordAudioStatus("Couldn't regenerate the audio. Try again.");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$("regenerateAudioBtn").addEventListener("click", regenerateWordAudio);
 
 // Flashcard audio is always freshly synthesized, never cut from the
 // conversation recording. A clean TTS reading of the word on its own is
@@ -3149,7 +3403,7 @@ async function sendDeepDiveMessage() {
               `Set "translation" ONLY when the discussion has produced a genuinely ` +
               `better, more context-accurate flashcard translation than the current ` +
               `one — otherwise use an empty string. Same for "pronunciation" ` +
-              `(a romanized reading; empty string if it doesn't apply or is unchanged).`,
+              `(${PHONETIC_SPEC} Empty string if it is unchanged).`,
           },
           ...deepDiveMessages,
         ],
@@ -3287,6 +3541,22 @@ async function openEditCardModal(card) {
       }
     } catch (err) {
       console.error("[VoiceCoach] loadAudioClip failed:", err);
+    }
+  } else {
+    showWordAudioStatus("No audio saved for this card yet — regenerate to add one.");
+  }
+
+  // Cards saved before every language got a respelling have no hint to show
+  // at review time — fill one in on the spot.
+  if (!card.pronunciation) {
+    const generation = wordAudioGeneration;
+    try {
+      const phonetic = await generatePhonetic(card.word, card.lang || currentSessionLanguage);
+      if (phonetic && generation === wordAudioGeneration && editingCardId === card.id) {
+        $("wordPronunciationInput").value = phonetic;
+      }
+    } catch (err) {
+      console.error("[VoiceCoach] phonetic backfill failed:", err);
     }
   }
 }
@@ -3598,8 +3868,10 @@ function showReviewCard() {
   $("reviewPlayBtn").classList.toggle("hidden", !card.hasAudio);
   $("reviewPlayBtn").dataset.id = card.id;
 
+  // The respelling is the hint, so it starts hidden on every card.
   $("reviewPronunciation").textContent = card.pronunciation || "";
-  $("reviewPronunciation").classList.toggle("hidden", !card.pronunciation);
+  $("reviewPronunciation").classList.add("hidden");
+  $("hintBtn").classList.toggle("hidden", !card.pronunciation);
   $("reviewTranslation").textContent = card.translation;
   $("reviewContext").textContent = card.context || "";
   $("reviewContext").classList.toggle("hidden", !card.context);
@@ -3619,10 +3891,20 @@ $("reviewPlayBtn").addEventListener("click", () => {
 });
 
 function revealReviewCard() {
+  const card = reviewQueue[reviewIndex];
   $("reviewBack").classList.remove("hidden");
   $("reviewGrades").classList.remove("hidden");
   $("revealBtn").classList.add("hidden");
+  // The answer includes how to say it, so the hint has nothing left to offer.
+  $("reviewPronunciation").classList.toggle("hidden", !card?.pronunciation);
+  $("hintBtn").classList.add("hidden");
 }
+
+$("hintBtn").addEventListener("click", (e) => {
+  e.stopPropagation(); // the card itself is a reveal target
+  $("reviewPronunciation").classList.remove("hidden");
+  $("hintBtn").classList.add("hidden");
+});
 
 $("revealBtn").addEventListener("click", revealReviewCard);
 
@@ -3851,23 +4133,6 @@ function renderPracticeBar() {
   $("chipStyle").textContent = practice.style === STYLE_GUIDED ? "Guided" : "Immersion";
 }
 
-// The EN button is pointless in a guided call (the coach is already explaining
-// in English), so it is disabled there rather than stacking two English
-// instructions on top of each other.
-function refreshEnglishHelpButton() {
-  const btn = $("englishHelpBtn");
-  if (!btn) return;
-  const isLive = currentState !== "idle" && currentState !== "error";
-  const guided = practiceFor(loadSettings() || {}).style === STYLE_GUIDED;
-  btn.disabled = !isLive || guided;
-  btn.title = guided
-    ? "Guided calls already explain in English"
-    : englishAssist
-      ? "Stop English help — back to the target language"
-      : "Ask for help in English";
-  if (guided && englishAssist) setEnglishAssist(false);
-}
-
 function renderScenarioGrid() {
   $("scenarioGrid").innerHTML = SCENARIOS.map((s) => `
     <button type="button" class="scenario-card" data-scenario="${escapeHtml(s.id)}">
@@ -3967,7 +4232,6 @@ $("savePracticeBtn").addEventListener("click", () => {
   practiceDraft = null;
   $("practiceModal").classList.add("hidden");
   renderPracticeBar();
-  refreshEnglishHelpButton();
   // A running session picks the new setup up on its next turn.
   applySessionInstructions();
 });
@@ -3993,6 +4257,7 @@ async function economyKickoffScene(settings) {
     }
     economyMessages.push({ role: "assistant", content: replyText });
     setTranscriptFinal("assistant", replyText);
+    refreshSuggestions(); // the opening line is the first thing to answer
 
     setState("assistant_speaking");
     const speech = await economySpeak(replyText, settings);
@@ -4057,6 +4322,7 @@ $("saveSetupBtn").addEventListener("click", () => {
     economyVoice: $("economyVoiceSelect").value,
     instructions: $("instructionsInput").value.trim(),
     model: $("modelInput").value.trim() || "gpt-realtime",
+    suggestions: $("suggestionsInput").checked,
   }));
   noteLanguageUsed($("languageSelect").value);
   openMain();
@@ -4070,7 +4336,6 @@ $("orbBtn").addEventListener("click", () => {
   }
 });
 
-$("englishHelpBtn").addEventListener("click", () => setEnglishAssist(!englishAssist));
 
 $("endSessionBtn").addEventListener("click", () => {
   // Preserve displayed deltas when the final transcript event has not arrived.
@@ -4089,6 +4354,8 @@ $("gearBtn").addEventListener("click", () => {
   $("s_economyVoiceSelect").value = settings.economyVoice || "alloy";
   $("s_instructionsInput").value = settings.instructions || "";
   $("s_modelInput").value = settings.model || "gpt-realtime";
+  // Saves that predate this setting have it undefined — default it on.
+  $("s_suggestionsInput").checked = settings.suggestions !== false;
   $("settingsModal").classList.remove("hidden");
 });
 
@@ -4112,6 +4379,7 @@ $("saveSettingsBtn").addEventListener("click", () => {
     economyVoice: $("s_economyVoiceSelect").value,
     instructions: $("s_instructionsInput").value.trim(),
     model: $("s_modelInput").value.trim() || "gpt-realtime",
+    suggestions: $("s_suggestionsInput").checked,
   }));
   // Switching languages mid-conversation would leave a half-foreign,
   // half-new-language transcript behind, so start clean instead.
