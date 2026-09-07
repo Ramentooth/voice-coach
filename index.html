@@ -479,31 +479,82 @@
   .status.is-error{ color:var(--danger); }
 
   /* ---------- reply suggestions ---------- */
+  /* One strip across the bottom rather than a stack: it sits above the mic
+     during a call, so it can afford one row and no more. Overflow scrolls
+     sideways, so extra options cost nothing vertically.                    */
   .suggestions{
     flex-shrink:0;
     width:100%;
     display:flex;
-    flex-direction:column;
-    gap:6px;
+    align-items:stretch;
+    gap:8px;
+    overflow-x:auto;
+    overflow-y:hidden;
+    padding:2px 2px 4px;
+    scroll-snap-type:x proximity;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
   }
+  .suggestions::-webkit-scrollbar{ display:none; }
+
   .suggestion{
+    position:relative;
+    flex:0 0 auto;
+    max-width:min(78%, 340px);
+    scroll-snap-align:start;
+    text-align:left;
     background:var(--panel);
     border:1px solid var(--border);
     border-radius:14px;
-    padding:9px 13px;
+    padding:8px 13px;
+    color:inherit;
+    font:inherit;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+    transition:border-color .25s ease, box-shadow .25s ease, background .25s ease;
   }
   .suggestion-text{ font-size:14px; line-height:1.35; }
-  .suggestion-translation{
+
+  /* The second line is a two-row track inside a one-row window. Picking a
+     suggestion slides the track up by exactly one row, so the English exits
+     through the top as the respelling arrives from the bottom.             */
+  .suggestion-flip{ height:17px; overflow:hidden; margin-top:3px; }
+  .suggestion-flip-track{ transition:transform .38s cubic-bezier(.4,0,.2,1); }
+  .suggestion-line{
+    height:17px;
+    line-height:17px;
     font-size:12px;
-    color:var(--dim);
-    margin-top:3px;
-    line-height:1.35;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
   }
+  .suggestion-translation{ color:var(--dim); }
+  .suggestion-phonetic{ color:var(--accent2); font-style:italic; }
+
+  .suggestion.is-picked{
+    border-color:var(--accent2);
+    box-shadow:0 0 0 1px var(--accent2), 0 0 20px -6px var(--accent2);
+  }
+  .suggestion.is-picked .suggestion-flip-track{ transform:translateY(-17px); }
+
+  /* Marks a suggestion built out of a word already in the learner's deck. */
+  .suggestion-mark{
+    position:absolute;
+    top:7px;
+    right:8px;
+    width:5px;
+    height:5px;
+    border-radius:50%;
+    background:var(--accent2);
+  }
+
   .suggestions-status{
     font-size:12px;
     color:var(--dim);
     text-align:center;
     font-style:italic;
+    width:100%;
+    padding:6px 0;
   }
 
   .check-row{ display:flex; align-items:center; gap:10px; cursor:pointer; }
@@ -1369,6 +1420,9 @@
     <div class="field">
       <label for="wordPronunciationInput">Phonetic respelling</label>
       <input type="text" id="wordPronunciationInput" spellcheck="false" placeholder="e.g. koh-NEE-chee-wah" />
+      <button class="btn btn-ghost" id="regeneratePhoneticBtn" style="padding:9px 14px; font-size:13px; margin-top:8px;">
+        Redo respelling
+      </button>
       <div class="hint" style="margin-top:6px;">Shown as the hint when you're stuck during review.</div>
     </div>
     <div class="field">
@@ -1560,6 +1614,15 @@
         <span>Reply suggestions</span>
       </label>
       <div class="hint" style="margin-top:6px;">During a call, show a few things you could say next, with English translations.</div>
+    </div>
+    <div class="field">
+      <label for="s_retentionSelect">Target retention</label>
+      <select id="s_retentionSelect">
+        <option value="0.85">85% &mdash; fewer reviews, more forgetting</option>
+        <option value="0.9">90% &mdash; recommended</option>
+        <option value="0.95">95% &mdash; more reviews, less forgetting</option>
+      </select>
+      <div class="hint" style="margin-top:6px;">How likely you want to be to remember a card when it comes back. Applies to intervals from your next review onward.</div>
     </div>
     <div class="field">
       <label for="s_instructionsInput">Personality / system instructions</label>
@@ -1842,16 +1905,6 @@ function escapeHtml(str) {
   ));
 }
 
-// Local (not UTC) YYYY-MM-DD, optionally offset by N days — used for flashcard due dates.
-function todayStr(offsetDays) {
-  const d = new Date();
-  d.setDate(d.getDate() + (offsetDays || 0));
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 function languageName(code) {
   const lang = LANGUAGES.find((l) => l.code === code);
   return lang ? lang.name : "English";
@@ -1987,27 +2040,182 @@ function needsSceneKickoff(settings) {
   return practice.style === STYLE_GUIDED || !!scenarioBrief(practice);
 }
 
-// Every card carries a phonetic respelling — the same sound-it-out English
-// spelling the guided call teaches with, not a scholarly romanization. It
-// doubles as the review hint, so it has to be readable cold by someone who
-// can't read the script at all. Generated for every language, Latin-script
-// ones included, since a familiar script still doesn't tell you where the
-// stress falls.
+/* ---------------------------------------------------------------------- */
+/* Phonetic respellings                                                   */
+/* ---------------------------------------------------------------------- */
+/* Every card carries a sound-it-out respelling — the same kind the guided
+   call teaches with, not a scholarly romanization. It doubles as the review
+   hint and as the "how do I say this" line on a picked reply suggestion, so
+   it has to be readable cold by someone who can't read the script at all.
+
+   Asking for the respelling directly is what made the old version invent
+   pronunciations, so three things guard it now:
+
+   1. The model must write the plain reading and the IPA BEFORE the
+      respelling. Going straight from written form to English spelling is two
+      guesses at once — what the word says, and how to spell that — and for
+      kanji, hanzi or French orthography the first guess is where it breaks.
+      IPA is also the form these models have seen most of (dictionaries),
+      so it's the most reliable thing to make them commit to first.
+   2. A fixed key, so "oo"/"ow"/"uh" mean one sound each instead of whatever
+      the model felt like on that call.
+   3. Per-language notes for the traps a naive respelling always misses —
+      Russian vowel reduction, French nasals, Mandarin tones, Japanese mora
+      timing. Only the note for the language in play is sent.                */
+
+// Phonetics is knowledge-heavy and mini models are noticeably worse at it —
+// this one field is worth the better model. Everything else stays on mini.
+const PHONETIC_MODEL = "gpt-4o";
+
+// Short description reused inline by prompts that ask for a respelling as
+// one field among several (the deep-dive refiner).
 const PHONETIC_SPEC =
   `a phonetic respelling that lets an English speaker say it out loud ` +
   `correctly: lowercase syllables separated by hyphens, with the stressed ` +
   `syllable in CAPITALS where the language has stress (for example ` +
-  `"koh-NEE-chee-wah", "oh-LAH", "BON-zhoor") and evenly weighted syllables ` +
-  `where it does not. Use plain English spelling patterns only — no IPA, no ` +
-  `tone numbers, no diacritics. Always provide one, for every language.`;
+  `"koh-NEE-chee-wah", "oh-LAH", "BON-zhoor"). Plain English spelling only ` +
+  `— no IPA and no accent marks.`;
 
-// One-off text completion (not the realtime session) to translate a single
-// selected word/phrase into English, using its source sentence for context.
-// Also asks for a romanized pronunciation guide for scripts a foreigner
-// can't easily sound out (kanji/kana, hanzi, hangul).
-async function translateWord(word, context, langCode) {
+const PHONETIC_KEY =
+  `Respelling key — use these spellings and no others for these sounds:\n` +
+  `  ah = father   eh = bed     ee = see     ih = sit     oo = boot\n` +
+  `  uh = cup/about oh = go     ay = say     ow = now     oy = boy\n` +
+  `  aw = law      air = hair   eer = beer   ur = hurt\n` +
+  `  ew = the rounded front vowel in French "tu" / German "über"\n` +
+  `  kh = the rasp in "Bach"    zh = the middle of "measure"\n` +
+  `  ng = sing     th = thin    dh = this    g = get (never "gem")\n` +
+  `  j = jam       y = yes      h = always sounded\n` +
+  `Separate syllables with hyphens. Put the stressed syllable in CAPITALS ` +
+  `in languages that have word stress; leave every syllable lowercase in ` +
+  `languages that don't, so the reader doesn't hear a stress that isn't there.`;
+
+// The specific ways a naive English respelling goes wrong per language.
+const PHONETIC_LANGUAGE_NOTES = {
+  ko:
+    `Respell the spoken form, not the letters: apply the sound changes ` +
+    `(신라 sounds "shil-la", 십리 "shim-nee"). ㅓ is "uh", never "oh". ㅡ is ` +
+    `a tight "eu" — write "uh". Final stops are cut off unreleased. Korean ` +
+    `has no word stress, so keep every syllable lowercase and even.`,
+  ja:
+    `Every mora takes the same length; a long vowel is two beats, so write ` +
+    `it doubled ("toh-oh-kyoh" for 東京), and a doubled consonant is a held ` +
+    `beat ("kit-te"). ら-row is a light tap — write "r". ふ is between f and ` +
+    `h. う and い between voiceless consonants are often whispered away ` +
+    `(です = "des"). Japanese has pitch accent, not stress: keep every ` +
+    `syllable lowercase.`,
+  zh:
+    `Mandarin is tonal, so a respelling without tone is wrong: append the ` +
+    `tone digit to each syllable (1 high, 2 rising, 3 dipping, 4 falling, ` +
+    `0 neutral) — "nee2-how3", "shyeh4-shyeh0". j/q/x are palatal ` +
+    `("jee", "chee", "shee"), zh/ch/sh/r are curled back. The "i" after ` +
+    `z/c/s/zh/ch/sh/r is a buzz, not "ee" — write "uh". Lone "e" is "uh", ` +
+    `"ü" is "ew". Keep syllables lowercase; the tone digit carries the ` +
+    `prominence.`,
+  ru:
+    `Stress is unpredictable and changes the vowels, so mark it in CAPITALS ` +
+    `and reduce the unstressed ones: unstressed "о" becomes "uh" ` +
+    `("молоко" = "muh-luh-KOH"). Palatalised consonants get a "y" glide ` +
+    `("ny", "ty"). "ы" is a back "ih". Final voiced consonants devoice.`,
+  fr:
+    `Final consonants are usually silent, and final "e" is silent. Nasal ` +
+    `vowels are one sound, not vowel-plus-n — write them "ahn", "ohn", ` +
+    `"an", "uhn" and never sound a separate "n". "u" is "ew", "ou" is "oo", ` +
+    `"r" is in the throat, "j"/soft "g" are "zh". French stresses the last ` +
+    `syllable of the phrase only lightly — keep syllables lowercase unless ` +
+    `it is a single word said alone.`,
+  es:
+    `Five pure vowels, always the same: ah, eh, ee, oh, oo — no glides. ` +
+    `"j" and "g" before e/i are "h". Single "r" is a tap, "rr" is trilled — ` +
+    `write "rr". "ll"/"y" are "y". "h" is silent. "b" and "v" are the same ` +
+    `sound. Stress the written accent if there is one, else the ` +
+    `second-to-last syllable for vowel/n/s endings and the last otherwise.`,
+  id:
+    `Spelling is regular. "c" is "ch", "j" is "j", "ng" is as in "sing", ` +
+    `"ny" as in "canyon", final "k" is a swallowed catch. Unstressed "e" is ` +
+    `often "uh". Stress the second-to-last syllable, lightly.`,
+  no:
+    `"kj"/"tj" and "ki"/"ky" are a breathy "sh". "sj"/"skj" and "sk" before ` +
+    `i/y are "sh". "eg"/"ei" are "ay", "au" is "ow", "o" is often "oo", ` +
+    `"u" is "ew", "å" is "oh". Final "d"/"g" are usually silent. Mark the ` +
+    `stressed syllable in CAPITALS.`,
+  ta:
+    `Tamil stops voice between vowels — the same letter is "k" at the start ` +
+    `and "g" in the middle, "t"/"d", "p"/"b". Retroflex consonants are said ` +
+    `with the tongue curled back. ழ is a curled "zh". Stress falls on the ` +
+    `first syllable, lightly — keep the rest even.`,
+  ur:
+    `Aspiration is meaningful: write the breathy stops with an "h" after ` +
+    `them ("kh", "ph", "th") and leave the plain ones bare. Retroflex ` +
+    `consonants curl the tongue back. "q" is a deep k, "gh" is a voiced ` +
+    `rasp, "kh" is the "Bach" rasp. Nasalised vowels get "n" without a full ` +
+    `n sound. Mark the stressed syllable in CAPITALS.`,
+  rw:
+    `"cy" is "ch", "jy" is "j", "ry" is a tapped "r" with a "y" glide. ` +
+    `Nasals before a consonant are their own light beat ("n-ta"). Vowel ` +
+    `length is meaningful — write long vowels doubled. Kinyarwanda is ` +
+    `tonal rather than stressed, so keep syllables lowercase and even.`,
+  en:
+    `Use the ordinary dictionary pronunciation and mark the primary stress ` +
+    `in CAPITALS. Respell reduced syllables honestly as "uh".`,
+};
+
+// Builds the system prompt for any call that has to produce a respelling.
+// Ordering matters: reading, then IPA, then respelling — each field is
+// derived from the one above it, so the model can't skip to a guess.
+function phoneticInstructions(langCode) {
+  const name = languageName(langCode);
+  const note = PHONETIC_LANGUAGE_NOTES[langCode];
+  return (
+    `You produce pronunciation guides for a ${name} learner whose first ` +
+    `language is English and who may not be able to read the script at all.\n\n` +
+    `Work in this order and fill in every field:\n` +
+    `  "reading" — how the word is actually read, in the plain form a ` +
+    `${name} dictionary would give (kana for Japanese, pinyin with tone ` +
+    `marks for Chinese, the Latin spelling itself for Latin-script ` +
+    `languages).\n` +
+    `  "ipa" — narrow IPA for that reading, in slashes.\n` +
+    `  "respelling" — that IPA written back out in plain English spelling.\n\n` +
+    `The respelling is what the learner actually reads, so it must contain ` +
+    `no IPA symbols, no accent marks and no letters outside a-z and hyphens ` +
+    `(tone digits are allowed where the language is tonal).\n\n` +
+    PHONETIC_KEY +
+    (note ? `\n\n${name} specifically: ${note}` : "")
+  );
+}
+
+// Last line of defence, not a transcriber: the prompt is what makes the
+// respelling right, and this only stops IPA symbols the model smuggled into
+// the wrong field from reaching a learner who can't read them. Every pattern
+// is deliberately non-ASCII — an already-correct respelling like
+// "koh-NEE-chee-wah" is plain a-z and must come through untouched.
+const PHONETIC_SUBSTITUTIONS = [
+  [/t͡?ʃ/g, "ch"], [/d͡?ʒ/g, "j"], [/t͡?s/g, "ts"],       // affricates first
+  [/[ʃʂɕ]/g, "sh"], [/[ʒʐʑ]/g, "zh"],
+  [/θ/g, "th"], [/ð/g, "dh"], [/ŋ/g, "ng"], [/ɲ/g, "ny"],
+  [/[ɑɐɒ]/g, "ah"], [/æ/g, "a"], [/[əɜɘʌ]/g, "uh"], [/ɛ/g, "eh"],
+  [/[ɪɨ]/g, "ih"], [/[ʊɯ]/g, "oo"], [/ɔ/g, "oh"],
+  [/ʏ/g, "ew"], [/[øœ]/g, "ur"],
+  [/[ɾɽɹɻʁʀ]/g, "r"], [/[χ]/g, "kh"], [/ɣ/g, "gh"], [/ɡ/g, "g"],
+  [/ʈ/g, "t"], [/ɖ/g, "d"], [/ɳ/g, "n"], [/ɭ/g, "l"], [/[ʋβ]/g, "v"],
+  [/[ˈˌːˑ‿ʔ]/g, ""], [/[\/\[\]]/g, ""],
+];
+
+function sanitizePhonetic(raw) {
+  let out = String(raw || "").trim();
+  if (!out) return "";
+  PHONETIC_SUBSTITUTIONS.forEach(([pattern, replacement]) => {
+    out = out.replace(pattern, replacement);
+  });
+  // Drop combining accents left on Latin letters (é -> e), then anything
+  // still outside the alphabet the key above is written in.
+  out = out.normalize("NFD").replace(/[̀-ͯ]/g, "");
+  out = out.replace(/[^A-Za-z0-9\-' ]/g, "");
+  return out.replace(/\s+/g, " ").trim();
+}
+
+// Shared plumbing for the two phonetic-producing calls.
+async function phoneticCompletion(systemPrompt, userContent) {
   const settings = loadSettings();
-  const sourceLang = languageName(langCode);
   const resp = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -2015,71 +2223,56 @@ async function translateWord(word, context, langCode) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: PHONETIC_MODEL,
       temperature: 0,
       response_format: { type: "json_object" },
       messages: [
-        {
-          role: "system",
-          content:
-            `You help a language learner. Given a ${sourceLang} word or short phrase ` +
-            `and its source sentence for context, respond with strict JSON: ` +
-            `{"translation": "...", "pronunciation": "..."}. "translation" is the ` +
-            `English translation — or, if the word is already English, a brief ` +
-            `one-line definition instead. "pronunciation" is ${PHONETIC_SPEC}` +
-            ` No extra text outside the JSON object.`,
-        },
-        { role: "user", content: `Sentence: ${context}\nWord: ${word}` },
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
       ],
     }),
   });
-  if (!resp.ok) throw new Error(`Translation request failed (${resp.status})`);
+  if (!resp.ok) throw new Error(`Pronunciation request failed (${resp.status})`);
   const data = await resp.json();
-  let parsed;
   try {
-    parsed = JSON.parse(data?.choices?.[0]?.message?.content || "{}");
+    return JSON.parse(data?.choices?.[0]?.message?.content || "{}");
   } catch (e) {
-    parsed = {};
+    return {};
   }
+}
+
+// One-off text completion (not the realtime session) to translate a single
+// selected word/phrase into English, using its source sentence for context,
+// and to produce the respelling that becomes the card's hint.
+async function translateWord(word, context, langCode) {
+  const sourceLang = languageName(langCode);
+  const parsed = await phoneticCompletion(
+    phoneticInstructions(langCode) +
+      `\n\nYou are also translating. Add a "translation" field: the English ` +
+      `meaning of the word as it is used in the sentence given — or, if it ` +
+      `is already English, a brief one-line definition instead.\n\n` +
+      `Respond with strict JSON: {"translation": "...", "reading": "...", ` +
+      `"ipa": "...", "respelling": "..."}. No text outside the JSON object.`,
+    `Sentence: ${context}\nWord: ${word}`
+  );
   return {
     translation: (parsed.translation || "").trim(),
-    pronunciation: (parsed.pronunciation || "").trim(),
+    pronunciation: sanitizePhonetic(parsed.respelling),
   };
 }
 
 // Just the respelling — used to backfill cards saved before every language
-// got one, so an old card still has a hint to offer at review time.
-async function generatePhonetic(word, langCode) {
-  const settings = loadSettings();
-  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${settings.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            `Given a ${languageName(langCode)} word or short phrase, respond with ` +
-            `strict JSON: {"pronunciation": "..."} where "pronunciation" is ` +
-            `${PHONETIC_SPEC} No extra text outside the JSON object.`,
-        },
-        { role: "user", content: word },
-      ],
-    }),
-  });
-  if (!resp.ok) throw new Error(`Phonetic request failed (${resp.status})`);
-  const data = await resp.json();
-  try {
-    return (JSON.parse(data?.choices?.[0]?.message?.content || "{}").pronunciation || "").trim();
-  } catch (e) {
-    return "";
-  }
+// got one, and to regenerate one that came out wrong. The source sentence
+// is passed when we have it: it settles homographs and, in languages with
+// liaison or sandhi, changes the sounds themselves.
+async function generatePhonetic(word, langCode, context) {
+  const parsed = await phoneticCompletion(
+    phoneticInstructions(langCode) +
+      `\n\nRespond with strict JSON: {"reading": "...", "ipa": "...", ` +
+      `"respelling": "..."}. No text outside the JSON object.`,
+    context ? `Sentence: ${context}\nWord: ${word}` : word
+  );
+  return sanitizePhonetic(parsed.respelling);
 }
 
 // Markers the segmentation prompt inserts at boundaries — chosen to be
@@ -2222,7 +2415,10 @@ const FLASHCARDS_KEY = "voiceCoach.flashcards";
 function loadFlashcards() {
   try {
     const parsed = JSON.parse(localStorage.getItem(FLASHCARDS_KEY) || "[]");
-    return Array.isArray(parsed) ? parsed : [];
+    // Cards saved by the old SM-2 scheduler are upgraded on read, so every
+    // consumer below can assume FSRS fields exist. The upgraded shape is
+    // written back the next time anything calls saveFlashcards().
+    return Array.isArray(parsed) ? parsed.map(migrateCardScheduling) : [];
   } catch (e) {
     return [];
   }
@@ -2284,34 +2480,341 @@ async function deleteAudioClip(id) {
   });
 }
 
-function dueCount(cards) {
-  const today = todayStr(0);
-  return (cards || loadFlashcards()).filter((c) => c.due <= today).length;
+/* ---------------------------------------------------------------------- */
+/* FSRS-6 scheduler                                                       */
+/* ---------------------------------------------------------------------- */
+/* A direct port of the reference implementation (open-spaced-repetition/
+   py-fsrs, which is the same algorithm Anki ships), not an approximation of
+   it. FSRS models three quantities per card:
+
+     Stability (S)     days until recall probability falls to 90%
+     Difficulty (D)    1-10, how hard it is to *raise* this card's stability
+     Retrievability (R) probability you'd recall it right now
+
+   Every review updates S and D from the actual R at review time, so being
+   late is information the scheduler uses rather than noise it ignores. The
+   old SM-2 code multiplied a per-card ease factor and could not do that: it
+   scheduled a card reviewed 40 days late identically to one reviewed on the
+   day. For vocabulary — a huge deck reviewed irregularly — that difference
+   is most of the benefit.
+
+   Parameter indices below are the reference's w0..w20; keep them in that
+   order or every formula silently changes meaning.                        */
+
+// Trained on ~700M reviews by the FSRS authors. A single learner's own
+// review log is nowhere near enough to beat these, so they stay fixed.
+const FSRS_PARAMETERS = [
+  0.212, 1.2931, 2.3065, 8.2956, 6.4133, 0.8334, 3.0194, 0.001,
+  1.8722, 0.1666, 0.796, 1.4835, 0.0614, 0.2629, 1.6483, 0.6014,
+  1.8729, 0.5425, 0.0912, 0.0658, 0.1542,
+];
+
+const FSRS_DECAY = -FSRS_PARAMETERS[20];
+const FSRS_FACTOR = Math.pow(0.9, 1 / FSRS_DECAY) - 1;
+const FSRS_STABILITY_MIN = 0.001;
+const FSRS_MIN_DIFFICULTY = 1;
+const FSRS_MAX_DIFFICULTY = 10;
+const FSRS_MAX_INTERVAL = 36500;
+
+const MINUTE_MS = 60 * 1000;
+const DAY_MS = 24 * 60 * MINUTE_MS;
+
+// Sub-day steps before a card graduates. These are why "Again" means "in a
+// minute" rather than "tomorrow": a word you just failed is worth seeing
+// again in the same sitting.
+const FSRS_LEARNING_STEPS = [1 * MINUTE_MS, 10 * MINUTE_MS];
+const FSRS_RELEARNING_STEPS = [10 * MINUTE_MS];
+
+// Ratings are 1-4 inside the scheduler to match the reference; the buttons
+// hand us 0-3, converted at the boundary by gradeToRating().
+const RATING_AGAIN = 1, RATING_HARD = 2, RATING_GOOD = 3, RATING_EASY = 4;
+const gradeToRating = (grade) => grade + 1;
+
+// How likely you want to be to remember a card when it comes up. Lower =
+// longer intervals and less work for more forgetting. 0.9 is the FSRS
+// default and what almost everyone should use.
+const DEFAULT_RETENTION = 0.9;
+
+function desiredRetention() {
+  const r = Number((loadSettings() || {}).retention);
+  return r >= 0.7 && r <= 0.98 ? r : DEFAULT_RETENTION;
 }
 
-// grade: 0 Again, 1 Hard, 2 Good, 3 Easy. Mutates card in place.
-function scheduleCard(card, grade) {
-  if (grade === 0) {
-    card.reps = 0;
-    card.interval = 1;
-    card.ease = Math.max(1.3, card.ease - 0.2);
-    card.due = todayStr(0); // stays due today so it resurfaces this/next session
-    return;
+const clampStability = (s) => Math.max(s, FSRS_STABILITY_MIN);
+const clampDifficulty = (d) =>
+  Math.min(Math.max(d, FSRS_MIN_DIFFICULTY), FSRS_MAX_DIFFICULTY);
+
+const w = FSRS_PARAMETERS;
+
+function fsrsInitialStability(rating) {
+  return clampStability(w[rating - 1]);
+}
+
+// clamp=false is used for the mean-reversion target, which the reference
+// deliberately takes unclamped.
+function fsrsInitialDifficulty(rating, clamp) {
+  const d = w[4] - Math.exp(w[5] * (rating - 1)) + 1;
+  return clamp === false ? d : clampDifficulty(d);
+}
+
+function fsrsNextDifficulty(difficulty, rating) {
+  const deltaDifficulty = -(w[6] * (rating - 3));
+  // Linear damping: the same rating moves an already-hard card less.
+  const damped = difficulty + (10 - difficulty) * deltaDifficulty / 9;
+  // Mean reversion pulls every card slowly back toward "easy card" difficulty,
+  // so one bad day doesn't mark a word hard forever.
+  const target = fsrsInitialDifficulty(RATING_EASY, false);
+  return clampDifficulty(w[7] * target + (1 - w[7]) * damped);
+}
+
+// The power forgetting curve. R(S, S) is 0.9 by construction of FSRS_FACTOR.
+function fsrsRetrievability(elapsedDays, stability) {
+  if (!stability) return 0;
+  return Math.pow(1 + FSRS_FACTOR * Math.max(0, elapsedDays) / stability, FSRS_DECAY);
+}
+
+// Reviews inside the same day carry almost no spacing information, so they
+// get their own much flatter growth curve.
+function fsrsShortTermStability(stability, rating) {
+  let increase = Math.exp(w[17] * (rating - 3 + w[18])) * Math.pow(stability, -w[19]);
+  if (rating >= RATING_HARD) increase = Math.max(increase, 1);
+  return clampStability(stability * increase);
+}
+
+function fsrsRecallStability(difficulty, stability, retrievability, rating) {
+  const hardPenalty = rating === RATING_HARD ? w[15] : 1;
+  const easyBonus = rating === RATING_EASY ? w[16] : 1;
+  return stability * (
+    1 + Math.exp(w[8])
+      * (11 - difficulty)
+      * Math.pow(stability, -w[9])
+      * (Math.exp((1 - retrievability) * w[10]) - 1)
+      * hardPenalty
+      * easyBonus
+  );
+}
+
+// A lapse doesn't reset stability to zero — a word you've known for a year
+// and just blanked on is still stickier than a brand new one.
+function fsrsForgetStability(difficulty, stability, retrievability) {
+  const longTerm = w[11]
+    * Math.pow(difficulty, -w[12])
+    * (Math.pow(stability + 1, w[13]) - 1)
+    * Math.exp((1 - retrievability) * w[14]);
+  const shortTerm = stability / Math.exp(w[17] * w[18]);
+  return Math.min(longTerm, shortTerm);
+}
+
+function fsrsNextStability(difficulty, stability, retrievability, rating) {
+  const next = rating === RATING_AGAIN
+    ? fsrsForgetStability(difficulty, stability, retrievability)
+    : fsrsRecallStability(difficulty, stability, retrievability, rating);
+  return clampStability(next);
+}
+
+// Invert the forgetting curve: how many days until R falls to the retention
+// the learner asked for. At 90% this returns exactly the stability.
+function fsrsInterval(stability) {
+  const raw = (stability / FSRS_FACTOR)
+    * (Math.pow(desiredRetention(), 1 / FSRS_DECAY) - 1);
+  return Math.min(Math.max(Math.round(raw), 1), FSRS_MAX_INTERVAL);
+}
+
+const FSRS_FUZZ_RANGES = [
+  { start: 2.5, end: 7, factor: 0.15 },
+  { start: 7, end: 20, factor: 0.1 },
+  { start: 20, end: Infinity, factor: 0.05 },
+];
+
+// Spreads out cards that were all learned on the same day so they don't come
+// back as one enormous pile months later.
+function fsrsFuzzInterval(intervalDays) {
+  if (intervalDays < 2.5) return intervalDays;
+  let delta = 1;
+  FSRS_FUZZ_RANGES.forEach((range) => {
+    delta += range.factor
+      * Math.max(Math.min(intervalDays, range.end) - range.start, 0);
+  });
+  let min = Math.max(2, Math.round(intervalDays - delta));
+  let max = Math.min(Math.round(intervalDays + delta), FSRS_MAX_INTERVAL);
+  min = Math.min(min, max);
+  return Math.min(Math.round(Math.random() * (max - min + 1) + min), FSRS_MAX_INTERVAL);
+}
+
+/* ---- card fields the scheduler owns ------------------------------------
+   state       "new" | "learning" | "review" | "relearning"
+   step        index into the learning/relearning steps, null once graduated
+   stability   days, null until first review
+   difficulty  1-10, null until first review
+   due         epoch ms (not a date string — learning steps are minutes)
+   lastReview  epoch ms of the previous review, null for a new card
+   reps        successful-or-not review count
+   lapses      how many times a graduated card was forgotten            */
+
+function newCardScheduling(now) {
+  return {
+    state: "new",
+    step: 0,
+    stability: null,
+    difficulty: null,
+    due: now,
+    lastReview: null,
+    reps: 0,
+    lapses: 0,
+  };
+}
+
+// Cards written by the old SM-2 code carry {ease, interval, reps, due:"Y-M-D"}.
+// Stability is defined as the interval at 90% retention, so an SM-2 interval
+// maps onto it directly; ease has no FSRS counterpart, so it is mapped onto
+// the difficulty scale linearly (2.5, the SM-2 default, lands mid-scale).
+function migrateCardScheduling(card) {
+  if (typeof card.stability === "number" || card.state === "new") return card;
+  const legacyDue = typeof card.due === "string" ? parseDayEnd(card.due) : Number(card.due);
+  const reps = Number(card.reps) || 0;
+  if (!reps) {
+    Object.assign(card, newCardScheduling(Number.isFinite(legacyDue) ? legacyDue : Date.now()));
+    return card;
   }
-  if (card.reps === 0) {
-    card.interval = grade === 1 ? 1 : grade === 3 ? 4 : 2;
-  } else if (card.reps === 1) {
-    card.interval = grade === 1 ? 3 : grade === 3 ? 8 : 6;
+  const intervalDays = Math.max(Number(card.interval) || 1, 1);
+  const ease = Number(card.ease) || 2.5;
+  card.state = "review";
+  card.step = null;
+  card.stability = clampStability(intervalDays);
+  card.difficulty = clampDifficulty(10 - (ease - 1.3) * (5 / 1.2));
+  card.due = Number.isFinite(legacyDue) ? legacyDue : Date.now();
+  card.lastReview = card.due - intervalDays * DAY_MS;
+  card.reps = reps;
+  card.lapses = Number(card.lapses) || 0;
+  return card;
+}
+
+// Applies one review. `fuzz` is off for the button previews so the number
+// shown under a button is the number that would actually be scheduled.
+function scheduleCard(card, grade, options) {
+  const rating = gradeToRating(grade);
+  const now = (options && options.now) || Date.now();
+  const fuzz = !(options && options.fuzz === false);
+  const steps = card.state === "relearning" ? FSRS_RELEARNING_STEPS : FSRS_LEARNING_STEPS;
+  // Rounded to whole milliseconds first: due times are integers in practice,
+  // and without it a value that is exactly N days can land a hair under and
+  // floor to N-1, quietly changing the retrievability the review is scored on.
+  const sinceLast = card.lastReview == null ? 0 : Math.round(now - card.lastReview);
+  const elapsedDays = card.lastReview ? Math.max(0, Math.floor(sinceLast / DAY_MS)) : 0;
+  const sameDay = card.lastReview != null && sinceLast < DAY_MS;
+
+  // --- memory state -----------------------------------------------------
+  if (card.stability == null || card.difficulty == null) {
+    card.stability = fsrsInitialStability(rating);
+    card.difficulty = fsrsInitialDifficulty(rating, true);
   } else {
-    card.interval = Math.round(card.interval * card.ease);
-    if (grade === 1) card.interval = Math.max(1, Math.round(card.interval * 0.8));
-    else if (grade === 3) card.interval = Math.round(card.interval * 1.3);
+    card.stability = sameDay
+      ? fsrsShortTermStability(card.stability, rating)
+      : fsrsNextStability(
+          card.difficulty,
+          card.stability,
+          fsrsRetrievability(elapsedDays, card.stability),
+          rating
+        );
+    card.difficulty = fsrsNextDifficulty(card.difficulty, rating);
   }
 
-  if (grade === 1) card.ease = Math.max(1.3, card.ease - 0.15);
-  else if (grade === 3) card.ease += 0.15;
-  card.reps += 1;
-  card.due = todayStr(card.interval);
+  // --- next due ---------------------------------------------------------
+  const graduate = () => {
+    card.state = "review";
+    card.step = null;
+    let days = fsrsInterval(card.stability);
+    if (fuzz) days = fsrsFuzzInterval(days);
+    return days * DAY_MS;
+  };
+
+  let delay;
+  if (card.state === "review") {
+    if (rating === RATING_AGAIN) {
+      card.lapses = (card.lapses || 0) + 1;
+      card.state = "relearning";
+      card.step = 0;
+      delay = FSRS_RELEARNING_STEPS[0];
+    } else {
+      delay = graduate();
+    }
+  } else {
+    // new / learning / relearning all walk the same step ladder.
+    const step = Math.min(Number(card.step) || 0, steps.length - 1);
+    if (rating === RATING_AGAIN) {
+      card.state = card.state === "relearning" ? "relearning" : "learning";
+      card.step = 0;
+      delay = steps[0];
+    } else if (rating === RATING_HARD) {
+      card.state = card.state === "relearning" ? "relearning" : "learning";
+      card.step = step;
+      // Hard repeats the step; on the very first one, sit between this step
+      // and the next so it isn't an endless one-minute loop.
+      delay = step === 0
+        ? (steps.length >= 2 ? (steps[0] + steps[1]) / 2 : steps[0] * 1.5)
+        : steps[step];
+    } else if (rating === RATING_GOOD && step + 1 < steps.length) {
+      card.state = card.state === "relearning" ? "relearning" : "learning";
+      card.step = step + 1;
+      delay = steps[card.step];
+    } else {
+      delay = graduate(); // last Good, or any Easy
+    }
+  }
+
+  card.reps = (Number(card.reps) || 0) + 1;
+  card.lastReview = now;
+  card.due = now + delay;
+  return card;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Due dates                                                              */
+/* ---------------------------------------------------------------------- */
+
+// End of the local day, N days out. Everything scheduled before this counts
+// as "due today", so a card put 10 minutes away is still on today's pile.
+function dayEndMs(offsetDays) {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d.getTime() + (offsetDays || 0) * DAY_MS;
+}
+
+// "YYYY-MM-DD" -> end of that local day. Only used to migrate old saves.
+function parseDayEnd(str) {
+  const parts = String(str).split("-").map(Number);
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return NaN;
+  return new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999).getTime();
+}
+
+function isCardDue(card, horizon) {
+  return card.due <= (horizon == null ? dayEndMs(0) : horizon);
+}
+
+function dueCount(cards) {
+  const horizon = dayEndMs(0);
+  return (cards || loadFlashcards()).filter((c) => isCardDue(c, horizon)).length;
+}
+
+// "in 3 days" style label for a card that isn't due yet.
+function formatDueLabel(card) {
+  const days = Math.ceil((card.due - Date.now()) / DAY_MS);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days < 30) return `${days}d`;
+  if (days < 365) return `${(days / 30).toFixed(1)}mo`;
+  return `${(days / 365).toFixed(1)}y`;
+}
+
+// Compact "when would this come back" label for the grade buttons.
+function formatDelay(ms) {
+  const minutes = ms / MINUTE_MS;
+  if (minutes < 60) return `${Math.max(1, Math.round(minutes))}m`;
+  if (minutes < 24 * 60) return `${Math.round(minutes / 60)}h`;
+  const days = ms / DAY_MS;
+  if (days < 30) return `${Math.round(days)}d`;
+  if (days < 365) return `${(days / 30).toFixed(1)}mo`;
+  return `${(days / 365).toFixed(1)}y`;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -2379,6 +2882,11 @@ function clearTranscript() {
 // Bumped whenever the conversation moves on, so a slow request can't paint
 // stale options over a newer turn.
 let suggestionGeneration = 0;
+// The suggestion the learner tapped, if any. A picked suggestion survives
+// into their speaking turn so they can read it aloud; an untouched bar is
+// cleared the moment they start talking, the same as before.
+let pickedSuggestionIndex = null;
+let suggestionItems = [];
 
 function suggestionsEnabled() {
   const settings = loadSettings();
@@ -2388,9 +2896,22 @@ function suggestionsEnabled() {
 
 function clearSuggestions() {
   suggestionGeneration += 1;
+  pickedSuggestionIndex = null;
+  suggestionItems = [];
   const el = $("suggestions");
   el.innerHTML = "";
   el.classList.add("hidden");
+}
+
+// Called when the learner starts speaking. Anything they picked stays up as
+// a script to read from; anything they ignored gets out of the way.
+function retainPickedSuggestion() {
+  if (pickedSuggestionIndex == null) {
+    clearSuggestions();
+    return;
+  }
+  const picked = $("suggestions").children[pickedSuggestionIndex];
+  if (picked) picked.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
 }
 
 function renderSuggestionsStatus(message) {
@@ -2406,32 +2927,110 @@ function renderSuggestionsStatus(message) {
 function renderSuggestions(items) {
   const el = $("suggestions");
   el.innerHTML = "";
+  pickedSuggestionIndex = null;
+  suggestionItems = items;
   if (!items.length) {
     el.classList.add("hidden");
     return;
   }
-  items.forEach((item) => {
-    const row = document.createElement("div");
+  items.forEach((item, index) => {
+    const row = document.createElement("button");
+    row.type = "button";
     row.className = "suggestion";
+    row.dataset.index = String(index);
+
     const text = document.createElement("div");
     text.className = "suggestion-text";
     text.textContent = item.text;
     row.appendChild(text);
-    if (item.translation) {
-      const translation = document.createElement("div");
-      translation.className = "suggestion-translation";
-      translation.textContent = item.translation;
-      row.appendChild(translation);
+
+    // Two stacked lines in a one-line window: English now, respelling after
+    // it's picked. Both exist up front so the slide has something to reveal.
+    const flip = document.createElement("div");
+    flip.className = "suggestion-flip";
+    const track = document.createElement("div");
+    track.className = "suggestion-flip-track";
+    const translation = document.createElement("div");
+    translation.className = "suggestion-line suggestion-translation";
+    translation.textContent = item.translation || " ";
+    const phonetic = document.createElement("div");
+    phonetic.className = "suggestion-line suggestion-phonetic";
+    phonetic.textContent = item.phonetic || "…";
+    track.appendChild(translation);
+    track.appendChild(phonetic);
+    flip.appendChild(track);
+    row.appendChild(flip);
+
+    if (item.usesStudied) {
+      const mark = document.createElement("span");
+      mark.className = "suggestion-mark";
+      mark.title = "Uses a word from your flashcards";
+      row.appendChild(mark);
     }
     el.appendChild(row);
   });
   el.classList.remove("hidden");
+  el.scrollLeft = 0;
+}
+
+// Picking one glows it and slides the English away to show how to say it.
+$("suggestions").addEventListener("click", async (e) => {
+  const row = e.target.closest(".suggestion");
+  if (!row) return;
+  const index = Number(row.dataset.index);
+  const item = suggestionItems[index];
+  if (!item) return;
+
+  Array.from($("suggestions").children).forEach((child) => {
+    child.classList.toggle("is-picked", child === row);
+  });
+  pickedSuggestionIndex = index;
+
+  // The respelling normally arrives with the suggestion; only fetch one if
+  // that field came back empty, in which case "…" is already on screen.
+  if (item.phonetic) return;
+  const generation = suggestionGeneration;
+  try {
+    const phonetic = await generatePhonetic(item.text, currentSessionLanguage);
+    if (generation !== suggestionGeneration) return;
+    item.phonetic = phonetic;
+    const line = row.querySelector(".suggestion-phonetic");
+    if (line) line.textContent = phonetic || item.text;
+  } catch (err) {
+    console.error("[VoiceCoach] suggestion respelling failed:", err);
+    const line = row.querySelector(".suggestion-phonetic");
+    if (line) line.textContent = item.text;
+  }
+});
+
+// Words the learner is already studying in this language, most-due first.
+// Feeding these to the suggester turns a reply into a second rep of a card
+// they'd otherwise only ever see in review.
+function studiedWordsForSuggestions(langCode) {
+  const horizon = dayEndMs(0);
+  return loadFlashcards()
+    .filter((c) => (c.lang || "en") === langCode && c.word)
+    .sort((a, b) => {
+      const aDue = isCardDue(a, horizon) ? 0 : 1;
+      const bDue = isCardDue(b, horizon) ? 0 : 1;
+      return aDue - bDue || a.due - b.due;
+    })
+    .slice(0, 30);
+}
+
+// Whether a suggestion actually reuses one of those words. Checked here
+// rather than trusting the model to report it, and substring matching works
+// for languages that don't separate words with spaces.
+function matchStudiedWord(text, studied) {
+  const haystack = text.toLowerCase();
+  return studied.some((c) => c.word.length > 1 && haystack.includes(c.word.toLowerCase()));
 }
 
 // Asks a cheap text model for a few natural replies the learner could give
-// next, in the target language with an English gloss under each. Uses the
-// tail of the transcript so the suggestions actually answer what was asked,
-// and the practice setup so they match the level and the scene being played.
+// next, in the target language with an English gloss and a respelling. Uses
+// the tail of the transcript so the suggestions actually answer what was
+// asked, the practice setup so they match the level and the scene, and the
+// learner's own deck so the words they're revising keep coming back.
 async function refreshSuggestions() {
   if (!suggestionsEnabled()) return;
   const settings = loadSettings();
@@ -2448,6 +3047,10 @@ async function refreshSuggestions() {
   const recent = transcriptHistory.slice(-6)
     .map((e) => `${e.role === "user" ? "Learner" : "Coach"}: ${e.text}`)
     .join("\n");
+  const studied = studiedWordsForSuggestions(currentSessionLanguage);
+  const studiedList = studied
+    .map((c) => `${c.word}${c.translation ? ` (${c.translation})` : ""}`)
+    .join("; ");
 
   try {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -2472,9 +3075,17 @@ async function refreshSuggestions() {
               (scene ? `They are in this situation: ${scene.name} — ${scene.setting} ` +
                 `The coach is playing ${scene.role}, and the learner is trying to: ` +
                 `${scene.goal}\n` : "") +
+              (studiedList
+                ? `\nThe learner is currently revising these words. Build as many ` +
+                  `of the suggestions as you naturally can out of them — reusing ` +
+                  `one here is worth a whole extra revision — but never at the ` +
+                  `cost of a sensible reply, and never force one in where it ` +
+                  `doesn't fit:\n${studiedList}\n`
+                : "") +
               `\nRespond with strict JSON: {"suggestions": [{"text": "...", ` +
-              `"translation": "..."}]}. "text" is the ${langName} sentence the ` +
-              `learner would say; "translation" is its plain English meaning.`,
+              `"translation": "...", "phonetic": "..."}]}. "text" is the ` +
+              `${langName} sentence the learner would say; "translation" is its ` +
+              `plain English meaning; "phonetic" is ${PHONETIC_SPEC}`,
           },
           { role: "user", content: recent },
         ],
@@ -2493,9 +3104,14 @@ async function refreshSuggestions() {
       .map((s) => ({
         text: String(s?.text || "").trim(),
         translation: String(s?.translation || "").trim(),
+        phonetic: sanitizePhonetic(s?.phonetic),
       }))
       .filter((s) => s.text)
       .slice(0, 3);
+    items.forEach((s) => { s.usesStudied = matchStudiedWord(s.text, studied); });
+    // Deck words first, so the double-practice option is the one already in
+    // view when the bar appears and the rest are a scroll away.
+    items.sort((a, b) => Number(b.usesStudied) - Number(a.usesStudied));
     renderSuggestions(items);
   } catch (err) {
     if (generation !== suggestionGeneration) return;
@@ -2753,7 +3369,7 @@ function realtimeBeginRecording() {
   if (!dc || !localStream) return;
   dc.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
   bubbleFor("user"); // reserve the DOM slot now, before any transcript text arrives
-  clearSuggestions(); // they answered the coach's previous turn
+  retainPickedSuggestion(); // a suggestion they tapped stays up to read from
   localStream.getTracks().forEach((t) => { t.enabled = true; });
   setState("user_speaking");
 }
@@ -2830,7 +3446,7 @@ async function startEconomySession(settings) {
 function economyBeginRecording() {
   if (!localStream) return;
   bubbleFor("user"); // reserve the DOM slot now, before transcription resolves
-  clearSuggestions(); // they answered the coach's previous turn
+  retainPickedSuggestion(); // a suggestion they tapped stays up to read from
   mediaRecorder = new MediaRecorder(localStream, recordingOptions());
   mediaRecorder._chunks = [];
   mediaRecorder.addEventListener("dataavailable", (e) => {
@@ -3268,6 +3884,16 @@ function setPendingAudioPreview(blob) {
 // get a manual retry. For a card that already exists the new clip is written
 // straight to IndexedDB; for one still being created it just replaces the
 // pending blob, which the save path persists as usual.
+// The card being edited may belong to a deck other than the language the
+// current session is in, so language-aware work uses the card's own.
+function currentCardLanguage() {
+  if (editingCardId) {
+    const card = loadFlashcards().find((c) => c.id === editingCardId);
+    if (card && card.lang) return card.lang;
+  }
+  return currentSessionLanguage;
+}
+
 async function regenerateWordAudio() {
   const word = $("wordInput").value.trim();
   if (!word) {
@@ -3306,6 +3932,32 @@ async function regenerateWordAudio() {
 }
 
 $("regenerateAudioBtn").addEventListener("click", regenerateWordAudio);
+
+// Respellings are generated, so they can come out wrong — same escape hatch
+// as the audio. Writes straight into the field; Save is what persists it.
+$("regeneratePhoneticBtn").addEventListener("click", async () => {
+  const word = $("wordInput").value.trim();
+  if (!word) return;
+  const btn = $("regeneratePhoneticBtn");
+  const input = $("wordPronunciationInput");
+  const previous = input.value;
+  btn.disabled = true;
+  input.value = "";
+  input.placeholder = "Working it out…";
+  try {
+    const phonetic = await generatePhonetic(
+      word, currentCardLanguage(), $("wordContextInput").value.trim());
+    input.value = phonetic || previous;
+    if (!phonetic) showWordAudioStatus("Couldn't work out a respelling for that.");
+  } catch (err) {
+    console.error("[VoiceCoach] respelling regeneration failed:", err);
+    input.value = previous;
+    showWordAudioStatus("Couldn't reach the pronunciation service.");
+  } finally {
+    input.placeholder = "e.g. koh-NEE-chee-wah";
+    btn.disabled = false;
+  }
+});
 
 // Flashcard audio is always freshly synthesized, never cut from the
 // conversation recording. A clean TTS reading of the word on its own is
@@ -3551,7 +4203,8 @@ async function openEditCardModal(card) {
   if (!card.pronunciation) {
     const generation = wordAudioGeneration;
     try {
-      const phonetic = await generatePhonetic(card.word, card.lang || currentSessionLanguage);
+      const phonetic = await generatePhonetic(
+        card.word, card.lang || currentSessionLanguage, card.context);
       if (phonetic && generation === wordAudioGeneration && editingCardId === card.id) {
         $("wordPronunciationInput").value = phonetic;
       }
@@ -3606,12 +4259,9 @@ $("saveWordBtn").addEventListener("click", async () => {
     contextTranslation,
     lang: currentSessionLanguage,
     createdAt: Date.now(),
-    ease: 2.5,
-    interval: 0,
-    reps: 0,
-    due: todayStr(0),
     hasAudio: false,
   };
+  Object.assign(card, newCardScheduling(Date.now()));
   if (pendingAudioBlob) {
     try {
       await saveAudioClip(card.id, pendingAudioBlob);
@@ -3640,18 +4290,20 @@ function updateDueBadge() {
   badge.classList.toggle("hidden", n === 0);
 }
 
-// A card is "mastered" once its interval reaches three weeks — the same
-// mature-card threshold Anki uses — and "learning" any time before that.
-const MASTERED_INTERVAL = 21;
+// A card is "mastered" once FSRS believes you'd still recall it three weeks
+// from now — stability is measured in exactly those days, so this is the same
+// three-week mature-card threshold Anki uses, read off the memory model
+// rather than off the last interval it happened to be given.
+const MASTERED_STABILITY = 21;
 
 function cardState(card) {
-  if (!card.reps) return "new";
-  return card.interval >= MASTERED_INTERVAL ? "mastered" : "learning";
+  if (card.state === "new" || !card.reps) return "new";
+  return (card.stability || 0) >= MASTERED_STABILITY ? "mastered" : "learning";
 }
 
 // Counts for one deck: the split of what's due today, and of the whole deck.
 function deckStats(cards) {
-  const today = todayStr(0);
+  const horizon = dayEndMs(0);
   const s = { total: cards.length, due: 0, dueNew: 0, dueLearning: 0, dueMastered: 0,
               totNew: 0, totLearning: 0, totMastered: 0 };
   cards.forEach((card) => {
@@ -3659,7 +4311,7 @@ function deckStats(cards) {
     if (state === "new") s.totNew += 1;
     else if (state === "learning") s.totLearning += 1;
     else s.totMastered += 1;
-    if (card.due <= today) {
+    if (isCardDue(card, horizon)) {
       s.due += 1;
       if (state === "new") s.dueNew += 1;
       else if (state === "learning") s.dueLearning += 1;
@@ -3734,7 +4386,7 @@ function openDeck(lang) {
 function renderDeckView() {
   const cards = (cardsByLang().get(activeDeckLang) || [])
     .slice()
-    .sort((a, b) => a.due.localeCompare(b.due) || a.createdAt - b.createdAt);
+    .sort((a, b) => a.due - b.due || a.createdAt - b.createdAt);
   if (!cards.length) { // last card in the deck was deleted
     cardsView = "decks";
     activeDeckLang = null;
@@ -3757,9 +4409,9 @@ function renderDeckView() {
   $("fcBarLearning").style.width = `${(stats.totLearning / stats.total) * 100}%`;
   $("fcBarMastered").style.width = `${(stats.totMastered / stats.total) * 100}%`;
 
-  const today = todayStr(0);
+  const horizon = dayEndMs(0);
   $("fcRows").innerHTML = cards.map((card) => {
-    const isDue = card.due <= today;
+    const isDue = isCardDue(card, horizon);
     return `
       <div class="fc-row" data-id="${escapeHtml(card.id)}">
         <div class="fc-row-main">
@@ -3771,7 +4423,7 @@ function renderDeckView() {
         <button class="play-btn fc-play" data-id="${escapeHtml(card.id)}" aria-label="Play audio" title="Play audio">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
         </button>` : ""}
-        <div class="fc-due${isDue ? " is-due" : ""}">${isDue ? "Due" : escapeHtml(card.due)}</div>
+        <div class="fc-due${isDue ? " is-due" : ""}">${isDue ? "Due" : escapeHtml(formatDueLabel(card))}</div>
         <button class="fc-delete" data-id="${escapeHtml(card.id)}" aria-label="Delete flashcard">✕</button>
       </div>`;
   }).join("");
@@ -3826,30 +4478,38 @@ $("fcRows").addEventListener("click", (e) => {
 /* Review session (full screen)                                           */
 /* ---------------------------------------------------------------------- */
 
+// The queue is worked from the front and cards can be put back into it: a
+// card answered "Again" is due in a minute, and a one-minute step is only
+// meaningful if the card actually comes back in this sitting.
 let reviewQueue = [];
-let reviewIndex = 0;
+let reviewTotal = 0;
+let reviewFinished = 0;
 
-// What scheduleCard() would do for this grade, without touching the card —
-// shown under each button so the next interval is visible before answering.
+// Anything scheduled sooner than this belongs to the current sitting rather
+// than to a future day, so it goes back in the queue instead of leaving it.
+const SESSION_HORIZON_MS = 20 * MINUTE_MS;
+// How many other cards to put between a card and its repeat — enough that
+// you're recalling it rather than reading it off the last screen.
+const REQUEUE_GAP = 3;
+
+// What scheduleCard() would do for this grade, without touching the card.
+// Fuzz is off so the number under the button is the number you'd get.
 function previewGrade(card, grade) {
-  const probe = Object.assign({}, card);
-  scheduleCard(probe, grade);
-  if (grade === 0) return "Today";
-  const days = probe.interval;
-  if (days <= 1) return "1d";
-  if (days < 30) return `${days}d`;
-  if (days < 365) return `${(days / 30).toFixed(1)}mo`;
-  return `${(days / 365).toFixed(1)}y`;
+  const now = Date.now();
+  const probe = scheduleCard(Object.assign({}, card), grade, { now, fuzz: false });
+  return formatDelay(probe.due - now);
 }
 
 // lang is required so mixed-language reviews never happen by accident.
 function openReviewSession(lang) {
-  const today = todayStr(0);
+  const horizon = dayEndMs(0);
   reviewQueue = loadFlashcards()
-    .filter((c) => c.due <= today && (c.lang || "en") === lang)
-    .sort((a, b) => a.due.localeCompare(b.due) || a.createdAt - b.createdAt);
+    .filter((c) => isCardDue(c, horizon) && (c.lang || "en") === lang)
+    .sort((a, b) => a.due - b.due || a.createdAt - b.createdAt)
+    .map((c) => c.id);
   if (!reviewQueue.length) return;
-  reviewIndex = 0;
+  reviewTotal = reviewQueue.length;
+  reviewFinished = 0;
   $("reviewScreen").classList.remove("hidden");
   showReviewCard();
 }
@@ -3859,10 +4519,17 @@ function closeReviewSession() {
   renderFlashcardsScreen();
 }
 
+function currentReviewCard() {
+  if (!reviewQueue.length) return null;
+  return loadFlashcards().find((c) => c.id === reviewQueue[0]) || null;
+}
+
 function showReviewCard() {
-  const card = reviewQueue[reviewIndex];
-  $("reviewProgress").innerHTML = `<b>${reviewIndex}</b>/${reviewQueue.length}`;
-  $("reviewTrackFill").style.width = `${(reviewIndex / reviewQueue.length) * 100}%`;
+  const card = currentReviewCard();
+  if (!card) { closeReviewSession(); return; }
+
+  $("reviewProgress").innerHTML = `<b>${reviewFinished}</b>/${reviewTotal}`;
+  $("reviewTrackFill").style.width = `${(reviewFinished / reviewTotal) * 100}%`;
 
   $("reviewWord").textContent = card.word;
   $("reviewPlayBtn").classList.toggle("hidden", !card.hasAudio);
@@ -3891,7 +4558,7 @@ $("reviewPlayBtn").addEventListener("click", () => {
 });
 
 function revealReviewCard() {
-  const card = reviewQueue[reviewIndex];
+  const card = currentReviewCard();
   $("reviewBack").classList.remove("hidden");
   $("reviewGrades").classList.remove("hidden");
   $("revealBtn").classList.add("hidden");
@@ -3917,15 +4584,21 @@ $("reviewCard").addEventListener("click", (e) => {
 $("reviewGrades").addEventListener("click", (e) => {
   const btn = e.target.closest(".grade-btn");
   if (!btn) return;
-  const grade = Number(btn.dataset.grade);
+  const id = reviewQueue.shift();
   const cards = loadFlashcards();
-  const card = cards.find((c) => c.id === reviewQueue[reviewIndex].id);
+  const card = cards.find((c) => c.id === id);
   if (card) {
-    scheduleCard(card, grade);
+    scheduleCard(card, Number(btn.dataset.grade));
     saveFlashcards(cards);
+    updateDueBadge();
+    if (card.due - Date.now() <= SESSION_HORIZON_MS) {
+      // Still on a learning step — show it again before the sitting ends.
+      reviewQueue.splice(Math.min(REQUEUE_GAP, reviewQueue.length), 0, id);
+    } else {
+      reviewFinished += 1;
+    }
   }
-  reviewIndex += 1;
-  if (reviewIndex >= reviewQueue.length) closeReviewSession();
+  if (!reviewQueue.length) closeReviewSession();
   else showReviewCard();
 });
 
@@ -4356,6 +5029,7 @@ $("gearBtn").addEventListener("click", () => {
   $("s_modelInput").value = settings.model || "gpt-realtime";
   // Saves that predate this setting have it undefined — default it on.
   $("s_suggestionsInput").checked = settings.suggestions !== false;
+  $("s_retentionSelect").value = String(desiredRetention());
   $("settingsModal").classList.remove("hidden");
 });
 
@@ -4380,6 +5054,7 @@ $("saveSettingsBtn").addEventListener("click", () => {
     instructions: $("s_instructionsInput").value.trim(),
     model: $("s_modelInput").value.trim() || "gpt-realtime",
     suggestions: $("s_suggestionsInput").checked,
+    retention: Number($("s_retentionSelect").value) || DEFAULT_RETENTION,
   }));
   // Switching languages mid-conversation would leave a half-foreign,
   // half-new-language transcript behind, so start clean instead.
