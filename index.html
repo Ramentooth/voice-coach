@@ -375,6 +375,64 @@
     border:1px solid var(--border);
     border-bottom-left-radius:4px;
   }
+  /* A coach turn is a row so the word-by-word button can sit beside the
+     bubble rather than inside it. Learner turns are bare bubbles.          */
+  .turn-row{
+    display:flex;
+    align-items:flex-start;
+    gap:6px;
+    align-self:flex-start;
+    width:100%;
+  }
+  /* The row is full width so the button lands right after the bubble, so the
+     bubble keeps its own cap: the usual 82% when it's a sentence, most of the
+     line when it's been broken into columns. 32px is the button plus gap.   */
+  .turn-row .bubble{ max-width:calc(82% - 32px); }
+  .turn-row .bubble.is-glossed{ max-width:calc(100% - 32px); }
+
+  .gloss-btn{
+    flex:0 0 auto;
+    width:26px;
+    height:26px;
+    margin-top:6px;
+    border-radius:50%;
+    border:1px solid var(--border);
+    background:var(--panel);
+    color:var(--dim);
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.02em;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+    transition:color .2s ease, border-color .2s ease, opacity .2s ease;
+  }
+  .gloss-btn:disabled{ opacity:.5; cursor:default; }
+  .gloss-btn.is-on{ color:var(--accent); border-color:var(--accent2); }
+
+  /* Interlinear mode: each word becomes its own little column with how to
+     say it and what it means stacked underneath, so the line still reads
+     left-to-right as a sentence.                                          */
+  .bubble.is-glossed{
+    white-space:normal;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:flex-start;
+    gap:8px 10px;
+  }
+  .gloss-word{ display:flex; flex-direction:column; align-items:flex-start; }
+  .gloss-word .g-src{ font-size:14px; line-height:1.3; }
+  .gloss-word .g-say{
+    font-size:10px;
+    line-height:1.3;
+    color:var(--accent2);
+    font-style:italic;
+    white-space:nowrap;
+  }
+  .gloss-word .g-en{ font-size:10px; line-height:1.3; color:var(--dim); }
+
   .orb-section{
     flex-shrink:0;
     display:flex;
@@ -2861,6 +2919,9 @@ function setFocusMode(on) {
 /* Transcript rendering                                                   */
 /* ---------------------------------------------------------------------- */
 
+// True between output_audio_buffer.started and .stopped — i.e. while the
+// coach is actually being heard, as opposed to merely done generating.
+let assistantAudioActive = false;
 let userBubbleEl = null;       // in-progress "you" bubble, or null between turns
 let assistantBubbleEl = null;  // in-progress "coach" bubble, or null between turns
 let transcriptHistory = [];    // [{role, text}] finalized lines, source for the word-picker after End Session
@@ -2871,6 +2932,7 @@ function clearTranscript() {
   userBubbleEl = null;
   assistantBubbleEl = null;
   transcriptHistory = [];
+  glossCache.clear();
   clearSuggestions();
   $("transcript").innerHTML = '<div class="transcript-empty" id="transcriptEmpty">Conversation will appear here.</div>';
 }
@@ -2887,6 +2949,29 @@ let suggestionGeneration = 0;
 // cleared the moment they start talking, the same as before.
 let pickedSuggestionIndex = null;
 let suggestionItems = [];
+// The request is fired as soon as the coach's words are known, but nothing is
+// painted while they're still being spoken — a bar that appears (or worse,
+// changes) halfway through the coach's turn pulls the eye off the listening.
+// Held results wait here until finishCoachTurn() lets them through.
+let suggestionsHeld = false;
+let heldSuggestionItems = null;
+
+// Idempotent: realtime fires this on every audio delta, and re-entering the
+// hold must not throw away a result that has already come back.
+function holdSuggestions() {
+  if (suggestionsHeld) return;
+  suggestionsHeld = true;
+  heldSuggestionItems = null;
+}
+
+function releaseSuggestions() {
+  suggestionsHeld = false;
+  if (heldSuggestionItems) {
+    const items = heldSuggestionItems;
+    heldSuggestionItems = null;
+    renderSuggestions(items);
+  }
+}
 
 function suggestionsEnabled() {
   const settings = loadSettings();
@@ -2898,6 +2983,8 @@ function clearSuggestions() {
   suggestionGeneration += 1;
   pickedSuggestionIndex = null;
   suggestionItems = [];
+  suggestionsHeld = false;
+  heldSuggestionItems = null;
   const el = $("suggestions");
   el.innerHTML = "";
   el.classList.add("hidden");
@@ -2906,6 +2993,10 @@ function clearSuggestions() {
 // Called when the learner starts speaking. Anything they picked stays up as
 // a script to read from; anything they ignored gets out of the way.
 function retainPickedSuggestion() {
+  // The learner talking ends the coach's turn, so nothing is being held for
+  // it any more; a result still in flight belongs to a turn they moved past.
+  suggestionsHeld = false;
+  heldSuggestionItems = null;
   if (pickedSuggestionIndex == null) {
     clearSuggestions();
     return;
@@ -3003,6 +3094,14 @@ $("suggestions").addEventListener("click", async (e) => {
   }
 });
 
+// One place that means "the coach has actually stopped talking", so the
+// suggestion bar and the word-by-word button both appear at that moment
+// rather than partway through the turn.
+function finishCoachTurn() {
+  releaseSuggestions();
+  attachGlossButton();
+}
+
 // Words the learner is already studying in this language, most-due first.
 // Feeding these to the suggester turns a reply into a second rep of a card
 // they'd otherwise only ever see in review.
@@ -3039,7 +3138,9 @@ async function refreshSuggestions() {
   if (!transcriptHistory.some((e) => e.role === "assistant")) return;
 
   const generation = ++suggestionGeneration;
-  renderSuggestionsStatus("Thinking of replies…");
+  // While the coach is still speaking the bar stays as it is; the spinner
+  // would be the same mid-turn flicker the results are being held back for.
+  if (!suggestionsHeld) renderSuggestionsStatus("Thinking of replies…");
 
   const langName = languageName(currentSessionLanguage);
   const practice = practiceFor(settings);
@@ -3112,13 +3213,164 @@ async function refreshSuggestions() {
     // Deck words first, so the double-practice option is the one already in
     // view when the bar appears and the rest are a scroll away.
     items.sort((a, b) => Number(b.usesStudied) - Number(a.usesStudied));
-    renderSuggestions(items);
+    if (suggestionsHeld) heldSuggestionItems = items;
+    else renderSuggestions(items);
   } catch (err) {
     if (generation !== suggestionGeneration) return;
     console.error("[VoiceCoach] reply suggestions failed:", err);
     // Non-essential feature — fold it away rather than showing an error.
     clearSuggestions();
   }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Word-by-word breakdown of a coach turn                                 */
+/* ---------------------------------------------------------------------- */
+/* A cheat sheet for the line the coach just said: each word gets how to
+   say it and what it means stacked underneath, interlinear-style. Appears
+   as a button beside the bubble once the coach has stopped talking, and
+   toggles back to the plain sentence.
+
+   Unlike the flashcard segmenter this doesn't have to reconstruct the line
+   character-for-character, because nothing here is saved — it's read once
+   and thrown away — so a model that normalises a quote mark costs nothing. */
+
+// Keyed by turn id, so toggling a line off and on again is free.
+const glossCache = new Map();
+
+async function fetchWordBreakdown(text, langCode) {
+  const settings = loadSettings();
+  const langName = languageName(langCode);
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${settings.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      // Same model as the card respellings: this is the same job, and the
+      // mini model is visibly worse at it.
+      model: PHONETIC_MODEL,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            phoneticInstructions(langCode) +
+            `\n\nYou are breaking one spoken ${langName} sentence into its ` +
+            `words for a learner reading along. Split it at real word ` +
+            `boundaries — which matters most where the writing has no spaces, ` +
+            `like Japanese or Chinese, where you must split by word and not by ` +
+            `character. Keep the words in the order they are spoken, and keep ` +
+            `particles and grammatical words as their own entries.\n\n` +
+            `Respond with strict JSON: {"words": [{"word": "...", ` +
+            `"respelling": "...", "meaning": "..."}]}. "word" is the word as ` +
+            `written in the sentence; "respelling" is its respelling as ` +
+            `described above, for that word in this sentence; "meaning" is ` +
+            `one or two English words for what it means here — the sense it ` +
+            `carries in this sentence, not a dictionary entry. For a word with ` +
+            `no English equivalent (a particle, say) describe its job in two ` +
+            `words. No text outside the JSON object.`,
+        },
+        { role: "user", content: text },
+      ],
+    }),
+  });
+  if (!resp.ok) throw new Error(`Breakdown request failed (${resp.status})`);
+  const data = await resp.json();
+  let parsed;
+  try {
+    parsed = JSON.parse(data?.choices?.[0]?.message?.content || "{}");
+  } catch (e) {
+    parsed = {};
+  }
+  return (Array.isArray(parsed.words) ? parsed.words : [])
+    .map((entry) => ({
+      word: String(entry?.word || "").trim(),
+      respelling: sanitizePhonetic(entry?.respelling),
+      meaning: String(entry?.meaning || "").trim(),
+    }))
+    .filter((entry) => entry.word);
+}
+
+function renderGloss(bubble, words) {
+  bubble.textContent = "";
+  bubble.classList.add("is-glossed");
+  words.forEach((entry) => {
+    const col = document.createElement("div");
+    col.className = "gloss-word";
+    const src = document.createElement("div");
+    src.className = "g-src";
+    src.textContent = entry.word;
+    col.appendChild(src);
+    if (entry.respelling) {
+      const say = document.createElement("div");
+      say.className = "g-say";
+      say.textContent = entry.respelling;
+      col.appendChild(say);
+    }
+    if (entry.meaning) {
+      const en = document.createElement("div");
+      en.className = "g-en";
+      en.textContent = entry.meaning;
+      col.appendChild(en);
+    }
+    bubble.appendChild(col);
+  });
+}
+
+function clearGloss(bubble) {
+  bubble.classList.remove("is-glossed");
+  bubble.textContent = bubble._plainText || "";
+}
+
+async function toggleGloss(bubble, btn) {
+  if (bubble.classList.contains("is-glossed")) {
+    clearGloss(bubble);
+    btn.classList.remove("is-on");
+    return;
+  }
+  const cached = glossCache.get(bubble._turnId);
+  if (cached) {
+    renderGloss(bubble, cached);
+    btn.classList.add("is-on");
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const words = await fetchWordBreakdown(bubble._plainText, bubble._lang);
+    if (!words.length) throw new Error("empty breakdown");
+    glossCache.set(bubble._turnId, words);
+    renderGloss(bubble, words);
+    btn.classList.add("is-on");
+  } catch (err) {
+    console.error("[VoiceCoach] word breakdown failed:", err);
+    btn.title = "Couldn't break that line down — tap to try again";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Called once the coach has finished speaking, for the turn they just spoke.
+function attachGlossButton() {
+  const rows = $("transcript").querySelectorAll(".turn-row");
+  const row = rows[rows.length - 1];
+  if (!row || row.querySelector(".gloss-btn")) return;
+  const bubble = row.querySelector(".bubble");
+  if (!bubble || !bubble.textContent.trim()) return;
+
+  bubble._plainText = bubble.textContent;
+  bubble._lang = currentSessionLanguage;
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "gloss-btn";
+  btn.textContent = "Aa";
+  btn.title = "Show each word with how to say it and what it means";
+  btn.setAttribute("aria-label", "Break this line down word by word");
+  btn.addEventListener("click", () => toggleGloss(bubble, btn));
+  row.appendChild(btn);
 }
 
 function transcriptScrollToBottom() {
@@ -3134,7 +3386,16 @@ function bubbleFor(role) {
   bubble = document.createElement("div");
   bubble.className = `bubble ${role}`;
   bubble._turnId = `turn-${Date.now()}-${++transcriptTurnSequence}`;
-  $("transcript").appendChild(bubble);
+  if (role === "assistant") {
+    // Coach turns get a row so the word-by-word button has somewhere to sit.
+    const row = document.createElement("div");
+    row.className = "turn-row";
+    row.appendChild(bubble);
+    bubble._row = row;
+    $("transcript").appendChild(row);
+  } else {
+    $("transcript").appendChild(bubble);
+  }
   if (role === "user") userBubbleEl = bubble; else assistantBubbleEl = bubble;
   return bubble;
 }
@@ -3165,7 +3426,7 @@ function setTranscriptFinal(role, text) {
     } else {
       // Reserved slot (see input_audio_buffer.speech_started) that never got
       // any transcript text — drop the empty bubble instead of leaving a gap.
-      bubble.remove();
+      (bubble._row || bubble).remove();
       if (!$("transcript").children.length) {
         $("transcript").innerHTML = '<div class="transcript-empty" id="transcriptEmpty">Conversation will appear here.</div>';
       }
@@ -3367,6 +3628,7 @@ async function startRealtimeSession(settings) {
 
 function realtimeBeginRecording() {
   if (!dc || !localStream) return;
+  assistantAudioActive = false; // barging in cuts the coach's audio short
   dc.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
   bubbleFor("user"); // reserve the DOM slot now, before any transcript text arrives
   retainPickedSuggestion(); // a suggestion they tapped stays up to read from
@@ -3408,6 +3670,8 @@ function handleRealtimeEvent(event) {
       break;
     case "output_audio_buffer.started":
     case "response.audio.delta":
+      assistantAudioActive = true;
+      holdSuggestions();
       setState("assistant_speaking");
       break;
     case "response.output_audio_transcript.delta":
@@ -3417,11 +3681,26 @@ function handleRealtimeEvent(event) {
     case "response.output_audio_transcript.done":
       setTranscriptFinal("assistant", msg.transcript);
       break;
-    case "output_audio_buffer.stopped":
+    // response.done fires when the model has finished *generating*, which is
+    // well before it has finished *speaking* — that gap is why the suggestion
+    // bar used to appear and then change mid-sentence. The text is final here,
+    // so the request goes out now, but holdSuggestions() keeps the result off
+    // screen until the audio actually stops below.
     case "response.done":
       setTranscriptFinal("assistant"); // safety net if the .done transcript event above didn't fire
+      refreshSuggestions();
+      // A turn with no audio at all never gets an output_audio_buffer.stopped,
+      // so it has to end here instead.
+      if (!assistantAudioActive) {
+        setState("ready");
+        finishCoachTurn();
+      }
+      break;
+    case "output_audio_buffer.stopped":
+      assistantAudioActive = false;
+      setTranscriptFinal("assistant");
       setState("ready");
-      refreshSuggestions(); // the coach just asked something — offer replies
+      finishCoachTurn(); // the coach has actually stopped talking now
       break;
     case "error":
       console.error("[VoiceCoach] realtime error event:", msg);
@@ -3494,8 +3773,9 @@ async function processEconomyTurn(chunks, mimeType) {
     economyMessages.push({ role: "assistant", content: replyText });
     setTranscriptFinal("assistant", replyText);
 
-    // Runs alongside the TTS request so the replies are on screen by the time
-    // the coach stops talking, rather than a beat after.
+    // Runs alongside the TTS request so the replies are ready by the time the
+    // coach stops talking — held back until then rather than shown early.
+    holdSuggestions();
     refreshSuggestions();
 
     setState("assistant_speaking");
@@ -3503,6 +3783,7 @@ async function processEconomyTurn(chunks, mimeType) {
     await playEconomyAudio(speech.url);
 
     if (currentState === "assistant_speaking") setState("ready");
+    finishCoachTurn();
   } catch (err) {
     console.error("[VoiceCoach] economy turn failed:", err);
     setState("error", humanizeError(err));
@@ -3614,6 +3895,7 @@ function endSession(silent) {
   pc = null;
   localStream = null;
   mediaRecorder = null;
+  assistantAudioActive = false;
   clearSuggestions();
   if (!silent) setState("idle");
 }
@@ -4930,6 +5212,7 @@ async function economyKickoffScene(settings) {
     }
     economyMessages.push({ role: "assistant", content: replyText });
     setTranscriptFinal("assistant", replyText);
+    holdSuggestions();
     refreshSuggestions(); // the opening line is the first thing to answer
 
     setState("assistant_speaking");
@@ -4937,6 +5220,7 @@ async function economyKickoffScene(settings) {
     if (!stillLive()) return;
     await playEconomyAudio(speech.url);
     if (currentState === "assistant_speaking") setState("ready");
+    finishCoachTurn();
   } catch (err) {
     console.error("[VoiceCoach] scene kickoff failed:", err);
     if (stillLive()) setState("error", humanizeError(err));
