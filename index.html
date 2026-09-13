@@ -433,9 +433,10 @@
   }
   .gloss-word .g-en{ font-size:10px; line-height:1.3; color:var(--dim); }
 
-  /* Every real word in a breakdown is a tap target that saves it as a card.
-     The padding/negative margin pair gives it a touch area without moving
-     the columns; a green underline marks words already in the deck.       */
+  /* Every real word in a breakdown is a tap target that picks it for the
+     end-of-call review. The padding/negative margin pair gives it a touch
+     area without moving the columns. Solid green = already in the deck;
+     dashed = picked this call, not decided yet.                           */
   .gloss-word.is-savable{
     cursor:pointer;
     border-radius:6px;
@@ -451,7 +452,13 @@
     text-decoration-thickness:2px;
     text-underline-offset:4px;
   }
-  .gloss-word.just-saved{ animation:glossSaved .6s ease; }
+  .gloss-word.is-picked .g-src{
+    text-decoration:underline dashed;
+    text-decoration-color:var(--accent);
+    text-decoration-thickness:1.5px;
+    text-underline-offset:4px;
+  }
+  .gloss-word.just-picked{ animation:glossSaved .6s ease; }
   @keyframes glossSaved{
     0%  { background:rgba(107,212,127,.28); }
     100%{ background:transparent; }
@@ -1104,6 +1111,43 @@
   }
   .tr-body.analyzing{ opacity:.35; pointer-events:none; }
   .tr-body .bubble{ max-width:100%; }
+
+  /* Words picked from breakdowns during the call, waiting on a keep/forget
+     decision. Sits above the transcript because it's the decision the
+     review exists to collect first.                                       */
+  .picks{
+    margin:4px 0 16px;
+    padding:12px 12px 8px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:var(--panel);
+  }
+  .picks-title{ font-size:14px; font-weight:700; margin:0 0 2px; }
+  .picks .hint{ margin:0 0 6px; }
+  .picks-list{ display:flex; flex-direction:column; max-height:38vh; overflow-y:auto; }
+  .pick-row{
+    /* Rows are <label>s so the whole row toggles the checkbox, which pulls in
+       the form-label look: caps would also flatten the respelling's stressed
+       syllable (koh-NEE-chee-wah) into KOH-NEE-CHEE-WAH. */
+    text-transform:none;
+    letter-spacing:normal;
+    margin-bottom:0;
+    color:var(--fg);
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:8px 2px;
+    border-top:1px solid var(--border);
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .pick-row:first-child{ border-top:none; }
+  .pick-row input{ width:18px; height:18px; flex-shrink:0; accent-color:#6bd47f; cursor:pointer; }
+  .pick-text{ min-width:0; display:flex; flex-direction:column; gap:1px; transition:opacity .15s ease; }
+  .pick-word{ font-size:16px; font-weight:600; }
+  .pick-say{ font-size:12px; font-weight:400; color:var(--accent2); font-style:italic; margin-left:8px; }
+  .pick-en{ font-size:12px; color:var(--dim); }
+  .pick-row.is-off .pick-text{ opacity:.35; }
   /* Each word/phrase gets its own inline-block box with a small side margin
      so adjacent underlines stay visually separated even with zero
      whitespace between glyphs (Japanese, Chinese) — plain text-decoration
@@ -1542,6 +1586,12 @@
 <div class="modal-backdrop hidden" id="transcriptReviewModal">
   <div class="modal transcript-review-modal">
     <h2>Add flashcards</h2>
+    <!-- Words tapped in breakdowns during the call; hidden when there are none. -->
+    <div class="picks hidden" id="callPicks">
+      <div class="picks-title">Words you picked during the call</div>
+      <p class="hint">Uncheck any you don't want. Checked words are added to your deck when you finish; the rest are forgotten.</p>
+      <div class="picks-list" id="callPicksList"></div>
+    </div>
     <p class="hint">Tap any underlined word or phrase to translate it and save it as a flashcard.</p>
     <div class="pill-toggle" id="segToggle">
       <button type="button" class="pill-toggle-btn active" data-seg="words">Words</button>
@@ -3039,6 +3089,7 @@ function clearTranscript() {
   assistantBubbleEl = null;
   transcriptHistory = [];
   glossCache.clear();
+  callPicks = []; // undecided picks go with the conversation they came from
   clearSuggestions();
   $("transcript").innerHTML = '<div class="transcript-empty" id="transcriptEmpty">Conversation will appear here.</div>';
 }
@@ -3455,25 +3506,43 @@ function renderGloss(bubble, words) {
     // Punctuation the model returned as its own "word" isn't worth a card.
     const word = cleanWord(entry.word);
     if (word) {
+      const lang = bubble._lang || currentSessionLanguage;
+      col.dataset.word = word;
       col.classList.add("is-savable");
       col.classList.toggle("is-saved", deck.has(word.toLowerCase()));
-      col.addEventListener("click", () => saveGlossWord(bubble, entry, col));
+      col.classList.toggle("is-picked", !!findPick(lang, word));
+      col.addEventListener("click", () => pickGlossWord(bubble, entry, col));
     }
     bubble.appendChild(col);
   });
 }
 
-// Tapping a word in the breakdown saves it on the spot, built from what the
-// breakdown already worked out: the word, how to say it, what it means in
-// this line, and the line itself as context. No modal and no extra model
-// call, so it can happen mid-conversation without losing the thread — only
-// the word's audio is fetched, in the background, after the card exists.
-// A word that's already a card opens that card instead, to fix or delete.
-async function saveGlossWord(bubble, entry, col) {
-  if (col.classList.contains("is-saving")) return;
+// Words tapped in a breakdown during the call. They wait here instead of going
+// straight into the deck: tapping mid-conversation is impulsive by design, so
+// the keep/forget decision is put off to the end-of-call review, where there's
+// time to think. Belongs to the conversation, so it clears with the transcript.
+let callPicks = [];
+
+function findPick(lang, word) {
+  const key = word.toLowerCase();
+  return callPicks.find((p) => p.lang === lang && p.word.toLowerCase() === key);
+}
+
+// The same word can show up in several broken-down lines; keep them in step.
+function markPickedEverywhere(word, on) {
+  $$(`.gloss-word[data-word="${CSS.escape(word)}"]`, $("transcript"))
+    .forEach((el) => el.classList.toggle("is-picked", on));
+}
+
+// Tapping a word picks it for the review, built from what the breakdown
+// already worked out: the word, how to say it, what it means in this line,
+// and the line itself as context. No modal and no model call, so it can
+// happen mid-sentence. Tapping a picked word again drops it; a word that's
+// already a card opens that card instead, to fix or delete.
+function pickGlossWord(bubble, entry, col) {
   const word = cleanWord(entry.word);
   const lang = bubble._lang || currentSessionLanguage;
-  const context = bubble._plainText || "";
+  const context = (bubble._plainText || "").trim();
 
   const existing = loadFlashcards().find(
     (c) => (c.lang || "en") === lang && c.word.toLowerCase() === word.toLowerCase());
@@ -3481,54 +3550,197 @@ async function saveGlossWord(bubble, entry, col) {
     openEditCardModal(existing);
     return;
   }
-  // Without a meaning there's no card to save, so this one goes through the
-  // usual translate-then-edit flow instead.
+  const picked = findPick(lang, word);
+  if (picked) {
+    callPicks = callPicks.filter((p) => p !== picked);
+    markPickedEverywhere(word, false);
+    showToast(`Dropped ${word}`);
+    return;
+  }
+  // Without a meaning there's nothing to put on the card, so this one goes
+  // through the usual translate-then-edit flow instead.
   if (!entry.meaning) {
     openWordModal(word, context, "");
     return;
   }
 
-  const card = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  callPicks.push({
     word,
     translation: entry.meaning,
     pronunciation: entry.respelling || "",
     context,
-    contextTranslation: "",
     lang,
-    createdAt: Date.now(),
-    hasAudio: false,
-  };
-  Object.assign(card, newCardScheduling(Date.now()));
-  const cards = loadFlashcards();
-  cards.push(card);
-  saveFlashcards(cards);
+    keep: true,
+  });
+  markPickedEverywhere(word, true);
+  col.classList.add("just-picked");
+  setTimeout(() => col.classList.remove("just-picked"), 700);
+  showToast(`Picked ${word} · ${entry.meaning} — review at the end`);
+}
 
-  col.classList.add("is-saved", "just-saved", "is-saving");
-  setTimeout(() => col.classList.remove("just-saved"), 700);
-  markWordAdded(word);
-  updateDueBadge();
-  showToast(`Saved ${word} · ${entry.meaning}`);
+// ---- the end-of-call review ------------------------------------------
 
-  try {
-    const blob = await synthesizeSelectedWord(word);
-    await saveAudioClip(card.id, blob);
-    // Re-read rather than reuse `cards`: the deck may have changed while the
-    // audio was being made, and the card may even have been deleted.
-    const latest = loadFlashcards();
-    const saved = latest.find((c) => c.id === card.id);
-    if (saved) {
-      saved.hasAudio = true;
-      saveFlashcards(latest);
-    } else {
-      deleteAudioClip(card.id).catch(() => {});
+function renderCallPicks() {
+  const list = $("callPicksList");
+  list.innerHTML = "";
+  $("callPicks").classList.toggle("hidden", !callPicks.length);
+  callPicks.forEach((pick, index) => {
+    const row = document.createElement("label");
+    row.className = "pick-row";
+    row.classList.toggle("is-off", !pick.keep);
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = pick.keep;
+    box.dataset.index = String(index);
+    const text = document.createElement("div");
+    text.className = "pick-text";
+    const top = document.createElement("div");
+    top.className = "pick-word";
+    top.textContent = pick.word;
+    if (pick.pronunciation) {
+      const say = document.createElement("span");
+      say.className = "pick-say";
+      say.textContent = pick.pronunciation;
+      top.appendChild(say);
     }
-  } catch (err) {
-    // The card is still good without it — "Regenerate audio" can add it later.
-    console.error("[VoiceCoach] audio for saved word failed:", err);
-  } finally {
-    col.classList.remove("is-saving");
+    const en = document.createElement("div");
+    en.className = "pick-en";
+    en.textContent = pick.translation;
+    text.appendChild(top);
+    text.appendChild(en);
+    row.appendChild(box);
+    row.appendChild(text);
+    list.appendChild(row);
+  });
+  updateFinishButton();
+}
+
+// The review's one button doubles as the decision, so it says what it'll do.
+function updateFinishButton() {
+  const btn = $("closeTranscriptReviewBtn");
+  if (!callPicks.length) {
+    btn.textContent = "Done";
+    return;
   }
+  const n = callPicks.filter((p) => p.keep).length;
+  btn.textContent = n
+    ? `Keep ${n} word${n === 1 ? "" : "s"} & finish`
+    : "Forget them & finish";
+}
+
+$("callPicksList").addEventListener("change", (e) => {
+  const box = e.target;
+  if (box.type !== "checkbox") return;
+  const pick = callPicks[Number(box.dataset.index)];
+  if (!pick) return;
+  pick.keep = box.checked;
+  box.closest(".pick-row").classList.toggle("is-off", !box.checked);
+  updateFinishButton();
+});
+
+// English for a coach line, when the review's own translation pass (started
+// as the review opened) has already produced it — usually the case by the
+// time anyone has read their list and tapped finish.
+function knownLineTranslation(context) {
+  const i = transcriptHistory.findIndex((e) => e.text.trim() === context);
+  return (i >= 0 && lineTranslations[i]) || "";
+}
+
+// Re-reads the deck for every write, so a background fill-in can never
+// overwrite an edit made while it was running.
+function updateCards(ids, change) {
+  const wanted = new Set(ids);
+  const cards = loadFlashcards();
+  let touched = false;
+  cards.forEach((card) => {
+    if (wanted.has(card.id)) {
+      change(card);
+      touched = true;
+    }
+  });
+  if (touched) saveFlashcards(cards);
+  return touched;
+}
+
+// Checked picks become cards; everything else is simply dropped. The cards
+// are saved at once, and the two slower parts — the English for the sentence
+// each word came from, and the word's audio — are filled in behind them.
+function keepCallPicks() {
+  const kept = callPicks.filter((p) => p.keep);
+  callPicks = [];
+  if (!kept.length) return [];
+
+  const cards = loadFlashcards();
+  const deckKey = (lang, word) => `${lang}|${word.toLowerCase()}`;
+  const inDeck = new Set(cards.map((c) => deckKey(c.lang || "en", c.word)));
+  const now = Date.now();
+  const added = [];
+  kept.forEach((pick, i) => {
+    const key = deckKey(pick.lang, pick.word);
+    // It may have been saved from the transcript below while the list was open.
+    if (inDeck.has(key)) return;
+    inDeck.add(key);
+    const card = {
+      id: `${now}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+      word: pick.word,
+      translation: pick.translation,
+      pronunciation: pick.pronunciation,
+      context: pick.context,
+      contextTranslation: knownLineTranslation(pick.context),
+      lang: pick.lang,
+      createdAt: now,
+      hasAudio: false,
+    };
+    Object.assign(card, newCardScheduling(now));
+    cards.push(card);
+    added.push(card);
+  });
+  if (!added.length) return [];
+
+  saveFlashcards(cards);
+  updateDueBadge();
+  renderFlashcardsScreen();
+  showToast(`Added ${added.length} card${added.length === 1 ? "" : "s"} to your ` +
+    `${languageName(added[0].lang)} deck`);
+  completeKeptCards(added);
+  return added;
+}
+
+async function completeKeptCards(added) {
+  // 1. The sentence each word came from, in English — one request per
+  //    language, and only for lines the review's pass hadn't covered.
+  const missing = new Map(); // lang -> Set of lines
+  added.filter((c) => c.context && !c.contextTranslation).forEach((c) => {
+    if (!missing.has(c.lang)) missing.set(c.lang, new Set());
+    missing.get(c.lang).add(c.context);
+  });
+  await Promise.all([...missing].map(async ([lang, lineSet]) => {
+    const lines = [...lineSet];
+    try {
+      const out = await translateLines(lines, lang);
+      const english = new Map(lines.map((line, i) => [line, out[i]]));
+      updateCards(added.filter((c) => c.lang === lang).map((c) => c.id), (card) => {
+        const en = english.get(card.context);
+        if (en && !card.contextTranslation) card.contextTranslation = en;
+      });
+    } catch (err) {
+      // The card is fine without it and the field can be filled in by hand.
+      console.error("[VoiceCoach] context translation for kept words failed:", err);
+    }
+  }));
+
+  // 2. Each word's audio. A card deleted while its clip was being made
+  //    takes the clip with it rather than leaving it orphaned in storage.
+  await Promise.all(added.map(async (card) => {
+    try {
+      const blob = await synthesizeSelectedWord(card.word);
+      await saveAudioClip(card.id, blob);
+      const stillThere = updateCards([card.id], (c) => { c.hasAudio = true; });
+      if (!stillThere) deleteAudioClip(card.id).catch(() => {});
+    } catch (err) {
+      console.error("[VoiceCoach] audio for kept word failed:", err);
+    }
+  }));
 }
 
 let toastTimer = null;
@@ -3588,7 +3800,7 @@ function attachGlossButton() {
   btn.type = "button";
   btn.className = "gloss-btn";
   btn.textContent = "Aa";
-  btn.title = "Break this line down word by word — tap any word to save it as a flashcard";
+  btn.title = "Break this line down word by word — tap words to pick them for your flashcards";
   btn.setAttribute("aria-label", "Break this line down word by word");
   btn.addEventListener("click", () => toggleGloss(bubble, btn));
   row.appendChild(btn);
@@ -4333,6 +4545,7 @@ async function openTranscriptReview() {
   const historySnapshot = transcriptHistory.map((entry) => ({ ...entry }));
   segmentMode = "words";
   $$(".pill-toggle-btn", $("segToggle")).forEach((b) => b.classList.toggle("active", b.dataset.seg === "words"));
+  renderCallPicks();
   $("transcriptReviewModal").classList.remove("hidden");
 
   if (!transcriptHistory.length) {
@@ -4462,6 +4675,7 @@ $("segToggle").addEventListener("click", (e) => {
 });
 
 $("closeTranscriptReviewBtn").addEventListener("click", () => {
+  keepCallPicks(); // the button is the keep/forget decision — see updateFinishButton()
   segmentationGeneration += 1;
   $("transcriptReviewModal").classList.add("hidden");
 });
