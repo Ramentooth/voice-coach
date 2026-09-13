@@ -544,7 +544,9 @@
     flex-shrink:0;
     width:100%;
     display:flex;
-    align-items:stretch;
+    /* Bottom-aligned, so a picked card grows upward on its own instead of
+       stretching every card in the row to match it. */
+    align-items:flex-end;
     gap:8px;
     overflow-x:auto;
     overflow-y:hidden;
@@ -576,7 +578,12 @@
   /* The second line is a two-row track inside a one-row window. Picking a
      suggestion slides the track up by exactly one row, so the English exits
      through the top as the respelling arrives from the bottom.             */
-  .suggestion-flip{ height:17px; overflow:hidden; margin-top:3px; }
+  .suggestion-flip{
+    height:17px;
+    overflow:hidden;
+    margin-top:3px;
+    transition:height .38s cubic-bezier(.4,0,.2,1);
+  }
   .suggestion-flip-track{ transition:transform .38s cubic-bezier(.4,0,.2,1); }
   .suggestion-line{
     height:17px;
@@ -594,6 +601,15 @@
     box-shadow:0 0 0 1px var(--accent2), 0 0 20px -6px var(--accent2);
   }
   .suggestion.is-picked .suggestion-flip-track{ transform:translateY(-17px); }
+  /* A sentence respelled is usually the longest line on the card, so once it
+     is the line showing it wraps instead of being cut off with an ellipsis,
+     and expandSuggestion() grows the window to fit it. */
+  .suggestion.is-picked .suggestion-phonetic{
+    height:auto;
+    white-space:normal;
+    overflow:visible;
+    text-overflow:clip;
+  }
 
   /* Marks a suggestion built out of a word already in the learner's deck. */
   .suggestion-mark{
@@ -1152,6 +1168,34 @@
   .review-context-en{ font-size:13px; color:var(--dim); font-style:italic; line-height:1.5; }
 
   .review-foot{ flex-shrink:0; padding:14px 12px calc(14px + env(safe-area-inset-bottom)); }
+  .review-round{ color:#ff8080; font-weight:700; margin-right:2px; }
+
+  .review-done{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    padding:24px 24px calc(24px + env(safe-area-inset-bottom));
+    text-align:center;
+  }
+  .review-done-check{
+    width:64px;
+    height:64px;
+    border-radius:50%;
+    background:#1f3524;
+    color:#6bd47f;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin-bottom:6px;
+  }
+  .review-done-check svg{ width:30px; height:30px; }
+  .review-done-title{ font-size:24px; font-weight:700; }
+  .review-done-sub{ font-size:15px; color:var(--fg); }
+  .review-done-next{ font-size:13px; color:var(--dim); max-width:280px; line-height:1.5; }
+  .review-done-btn{ margin-top:14px; min-width:200px; }
   .review-hint{
     display:block;
     margin:0 auto 4px;
@@ -1552,7 +1596,18 @@
     </div>
   </div>
 
-  <div class="review-foot">
+  <!-- Shown in place of the card + buttons once the sitting is over. -->
+  <div class="review-done hidden" id="reviewDone">
+    <div class="review-done-check" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+    </div>
+    <div class="review-done-title">All done</div>
+    <div class="review-done-sub" id="reviewDoneSub"></div>
+    <div class="review-done-next" id="reviewDoneNext"></div>
+    <button class="btn btn-primary review-done-btn" id="reviewDoneBtn">Back to decks</button>
+  </div>
+
+  <div class="review-foot" id="reviewFoot">
     <button class="review-hint" id="hintBtn">Get a hint</button>
     <button class="review-reveal" id="revealBtn">Tap to show answer</button>
     <div class="review-grades hidden" id="reviewGrades">
@@ -3064,6 +3119,22 @@ function renderSuggestions(items) {
   el.scrollLeft = 0;
 }
 
+// Height can't transition to "auto", so the wrapped respelling is measured
+// and the window is given that height in px; clearing it lets the CSS 17px
+// take over again, which transitions back down.
+function expandSuggestion(row) {
+  const flip = row.querySelector(".suggestion-flip");
+  const phonetic = row.querySelector(".suggestion-phonetic");
+  row.classList.add("is-picked");
+  if (flip && phonetic) flip.style.height = `${phonetic.offsetHeight}px`;
+}
+
+function collapseSuggestion(row) {
+  row.classList.remove("is-picked");
+  const flip = row.querySelector(".suggestion-flip");
+  if (flip) flip.style.height = "";
+}
+
 // Picking one glows it and slides the English away to show how to say it.
 $("suggestions").addEventListener("click", async (e) => {
   const row = e.target.closest(".suggestion");
@@ -3073,8 +3144,11 @@ $("suggestions").addEventListener("click", async (e) => {
   if (!item) return;
 
   Array.from($("suggestions").children).forEach((child) => {
-    child.classList.toggle("is-picked", child === row);
+    if (child === row) expandSuggestion(child);
+    else collapseSuggestion(child);
   });
+  // A card tapped at the edge of the strip would expand half off-screen.
+  row.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
   pickedSuggestionIndex = index;
 
   // The respelling normally arrives with the suggestion; only fetch one if
@@ -3092,6 +3166,8 @@ $("suggestions").addEventListener("click", async (e) => {
     const line = row.querySelector(".suggestion-phonetic");
     if (line) line.textContent = item.text;
   }
+  // The real respelling replaced a one-character "…", so size the window again.
+  if (row.classList.contains("is-picked")) expandSuggestion(row);
 });
 
 // One place that means "the coach has actually stopped talking", so the
@@ -3716,10 +3792,55 @@ function handleRealtimeEvent(event) {
 /* Economy mode (REST: transcribe -> chat -> speak, push-to-talk)         */
 /* ---------------------------------------------------------------------- */
 
+// Bumped whenever a session starts or ends, so a turn still in flight from an
+// earlier call can't play its audio or write its history into the current one
+// (before, ending a call mid-turn still let the coach finish talking).
+let economyTurnId = 0;
+let economyRecordingStartedAt = 0;
+
+// Shorter than this is a double-tap, not speech. Whisper rejects it outright
+// ("audio file is too short"), and that rejection used to end the call.
+const ECONOMY_MIN_RECORDING_MS = 400;
+// A request that hasn't answered by now isn't going to. Taps are ignored
+// while economy mode is "Thinking…", so without a limit one stalled request
+// on a bad connection left the call stuck with no way to speak.
+const ECONOMY_REQUEST_TIMEOUT_MS = 30000;
+
+// Whisper's own language list (openai/whisper, tokenizer.py). A code outside
+// it is a hard 400 on every single turn — Kinyarwanda ("rw") is the one this
+// app offers — so those go without a hint and Whisper detects the language.
+const WHISPER_LANGUAGES = new Set("en zh de es ru ko fr ja pt tr pl ca nl ar sv it id hi fi vi he uk el ms cs ro da hu ta no th ur hr bg lt la mi ml cy sk te fa lv bn sr az sl kn et mk br eu is hy ne mn bs kk sq sw gl mr pa si km sn yo so af oc ka be tg sd gu am yi lo uz fo ht ps tk nn mt sa lb my bo tl mg as tt haw ln ha ba jw su yue".split(" "));
+
 async function startEconomySession(settings) {
+  economyTurnId += 1;
   localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   economyMessages = [{ role: "system", content: buildInstructions(settings) }];
   setState("ready");
+}
+
+// One failed turn is one failed turn, not a failed call: back to "ready" with
+// the reason in the status line and the conversation intact. Going to the
+// "error" state here meant the next tap ran startSession(), which wiped the
+// transcript and the coach's memory of everything said so far.
+function showTurnNote(message) {
+  setState("ready");
+  const statusEl = $("statusText");
+  const text = String(message || "");
+  statusEl.textContent = text.length > 140 ? `${text.slice(0, 137)}…` : text;
+  statusEl.classList.add("is-error");
+}
+
+async function fetchWithTimeout(url, options, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, Object.assign({}, options, { signal: controller.signal }));
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error("The connection timed out.");
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function economyBeginRecording() {
@@ -3732,18 +3853,27 @@ function economyBeginRecording() {
     if (e.data && e.data.size) e.currentTarget._chunks.push(e.data);
   });
   mediaRecorder.start();
+  economyRecordingStartedAt = Date.now();
   setState("user_speaking");
 }
 
 function economyStopRecording() {
   if (!mediaRecorder) return;
-  setState("thinking");
   const recorder = mediaRecorder;
+  const tooShort = Date.now() - economyRecordingStartedAt < ECONOMY_MIN_RECORDING_MS;
+  setState("thinking");
   const stopped = new Promise((resolve) => {
     recorder.addEventListener("stop", resolve, { once: true });
   });
   recorder.stop();
-  stopped.then(() => processEconomyTurn(recorder._chunks || [], recorder.mimeType));
+  stopped.then(() => {
+    if (tooShort) {
+      setTranscriptFinal("user"); // drop the reserved empty bubble
+      showTurnNote("Didn't catch that — tap, speak, then tap again.");
+      return;
+    }
+    processEconomyTurn(recorder._chunks || [], recorder.mimeType);
+  });
 }
 
 function economyInterruptAndRecord() {
@@ -3752,6 +3882,13 @@ function economyInterruptAndRecord() {
 }
 
 async function processEconomyTurn(chunks, mimeType) {
+  const turn = economyTurnId;
+  const current = () => turn === economyTurnId;
+  let replyShown = false;
+  // The stop-tap that leads here already says "Thinking…"; saying it again
+  // means the turn can't run while the orb reads "ready", where a tap would
+  // start a recording that the coach's reply then plays over.
+  setState("thinking");
   try {
     const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
     if (!blob.size) {
@@ -3762,44 +3899,72 @@ async function processEconomyTurn(chunks, mimeType) {
     const settings = loadSettings();
 
     const userText = await economyTranscribe(blob, settings);
+    if (!current()) return;
     setTranscriptFinal("user", userText);
     if (!userText.trim()) {
-      setState("ready");
+      showTurnNote("Didn't catch that — try again.");
       return;
     }
     economyMessages.push({ role: "user", content: userText });
 
     const replyText = await economyChat(settings);
+    if (!current()) return;
+    if (!replyText) {
+      showTurnNote("The coach didn't answer — tap to try again.");
+      return;
+    }
     economyMessages.push({ role: "assistant", content: replyText });
     setTranscriptFinal("assistant", replyText);
+    replyShown = true;
 
     // Runs alongside the TTS request so the replies are ready by the time the
     // coach stops talking — held back until then rather than shown early.
     holdSuggestions();
     refreshSuggestions();
 
-    setState("assistant_speaking");
+    // Still "Thinking…" while the speech is generated. Switching to
+    // "speaking" before there was any audio let a tap start a recording in
+    // that gap, and then the coach's voice played over the learner's turn.
     const speech = await economySpeak(replyText, settings);
+    if (!current()) { URL.revokeObjectURL(speech.url); return; }
+    setState("assistant_speaking");
     await playEconomyAudio(speech.url);
+    if (!current()) return;
 
     if (currentState === "assistant_speaking") setState("ready");
     finishCoachTurn();
   } catch (err) {
+    if (!current()) return;
     console.error("[VoiceCoach] economy turn failed:", err);
-    setState("error", humanizeError(err));
+    setTranscriptFinal("user"); // drop a reserved bubble that never got text
+    // If the reply made it on screen before the voice failed, it's still
+    // worth answering — let its suggestions and word breakdown through.
+    if (replyShown) finishCoachTurn();
+    showTurnNote(`${humanizeError(err)} Tap to try again.`);
   }
+}
+
+// Whisper decides the format from the filename, and Safari records MP4 rather
+// than WebM — an MP4 recording uploaded as "audio.webm" is rejected.
+function recordingFilename(mimeType) {
+  const type = String(mimeType || "").toLowerCase();
+  if (type.includes("mp4") || type.includes("m4a") || type.includes("aac")) return "audio.mp4";
+  if (type.includes("ogg")) return "audio.ogg";
+  if (type.includes("wav")) return "audio.wav";
+  if (type.includes("mpeg") || type.includes("mp3")) return "audio.mp3";
+  return "audio.webm";
 }
 
 async function economyTranscribe(blob, settings) {
   const form = new FormData();
-  form.append("file", blob, "audio.webm");
+  form.append("file", blob, recordingFilename(blob.type));
   form.append("model", ECONOMY_STT_MODEL);
-  form.append("language", settings.language);
-  const resp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+  if (WHISPER_LANGUAGES.has(settings.language)) form.append("language", settings.language);
+  const resp = await fetchWithTimeout("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: { "Authorization": `Bearer ${settings.apiKey}` },
     body: form,
-  });
+  }, ECONOMY_REQUEST_TIMEOUT_MS);
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
     throw new Error(`Transcription failed (${resp.status}). ${text.slice(0, 200)}`);
@@ -3809,7 +3974,7 @@ async function economyTranscribe(blob, settings) {
 }
 
 async function economyChat(settings, messages) {
-  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+  const resp = await fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${settings.apiKey}`,
@@ -3819,7 +3984,7 @@ async function economyChat(settings, messages) {
       model: ECONOMY_CHAT_MODEL,
       messages: messages || economyMessages,
     }),
-  });
+  }, ECONOMY_REQUEST_TIMEOUT_MS);
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
     throw new Error(`Chat request failed (${resp.status}). ${text.slice(0, 200)}`);
@@ -3829,7 +3994,7 @@ async function economyChat(settings, messages) {
 }
 
 async function economySpeak(text, settings) {
-  const resp = await fetch("https://api.openai.com/v1/audio/speech", {
+  const resp = await fetchWithTimeout("https://api.openai.com/v1/audio/speech", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${settings.apiKey}`,
@@ -3840,7 +4005,7 @@ async function economySpeak(text, settings) {
       voice: settings.economyVoice || "alloy",
       input: text,
     }),
-  });
+  }, ECONOMY_REQUEST_TIMEOUT_MS);
   if (!resp.ok) {
     const text2 = await resp.text().catch(() => "");
     throw new Error(`Speech synthesis failed (${resp.status}). ${text2.slice(0, 200)}`);
@@ -3862,8 +4027,32 @@ function playEconomyAudio(url) {
     };
     audioEl.addEventListener("ended", finish, { once: true });
     audioEl.addEventListener("pause", finish, { once: true }); // covers economyInterruptAndRecord()
-    audioEl.play().catch(finish);
+    audioEl.play().catch((err) => {
+      // Usually an autoplay refusal — see primeAudioOutput(). Logged, because
+      // on its own it looks like the coach simply chose not to speak.
+      console.warn("[VoiceCoach] coach audio could not play:", err);
+      finish();
+    });
   });
+}
+
+// iOS only lets a media element start playing from inside a user gesture,
+// and the coach's reply lands seconds after the tap that sent the turn — so
+// that play() can be refused and the reply skipped in silence. Playing a few
+// milliseconds of silence from inside a real tap unlocks the element for the
+// rest of the page's life. Realtime mode drives the same element through
+// srcObject, so it's left alone whenever that's in use.
+const SILENT_WAV = "data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
+let audioOutputPrimed = false;
+
+function primeAudioOutput() {
+  if (audioOutputPrimed) return;
+  const audioEl = $("remoteAudio");
+  if (audioEl.srcObject) return;
+  audioOutputPrimed = true;
+  audioEl.src = SILENT_WAV;
+  const played = audioEl.play();
+  if (played && played.catch) played.catch(() => { audioOutputPrimed = false; });
 }
 
 /* ---------------------------------------------------------------------- */
@@ -3896,6 +4085,7 @@ function endSession(silent) {
   localStream = null;
   mediaRecorder = null;
   assistantAudioActive = false;
+  economyTurnId += 1; // anything still in flight belongs to a call that's over
   clearSuggestions();
   if (!silent) setState("idle");
 }
@@ -3904,6 +4094,10 @@ function humanizeError(err) {
   if (!err) return "Unknown error.";
   if (err.name === "NotAllowedError") return "Microphone permission was denied.";
   if (err.name === "NotFoundError") return "No microphone was found.";
+  // Chrome says "Failed to fetch", Safari "Load failed" — both mean offline.
+  if (err.name === "TypeError" && /fetch|load failed|network/i.test(err.message || "")) {
+    return "Couldn't reach OpenAI — check your connection.";
+  }
   return err.message || "Unknown error.";
 }
 
@@ -4760,19 +4954,23 @@ $("fcRows").addEventListener("click", (e) => {
 /* Review session (full screen)                                           */
 /* ---------------------------------------------------------------------- */
 
-// The queue is worked from the front and cards can be put back into it: a
-// card answered "Again" is due in a minute, and a one-minute step is only
-// meaningful if the card actually comes back in this sitting.
-let reviewQueue = [];
-let reviewTotal = 0;
-let reviewFinished = 0;
-
-// Anything scheduled sooner than this belongs to the current sitting rather
-// than to a future day, so it goes back in the queue instead of leaving it.
-const SESSION_HORIZON_MS = 20 * MINUTE_MS;
-// How many other cards to put between a card and its repeat — enough that
-// you're recalling it rather than reading it off the last screen.
-const REQUEUE_GAP = 3;
+// A sitting is one pass through what's due, then one more look at anything
+// answered Again. It used to put a card back in the queue whenever its next
+// learning step was under 20 minutes away — Anki's learn-ahead rule — but a
+// new card needs two Goods to leave learning and Hard repeats its step, so on
+// a small deck the same cards came round indefinitely, and the counter (which
+// only moved when a card graduated) sat at 0/N the whole time.
+//
+// Now the counter is simply where you are in the pile and the sitting ends
+// when the pile does. Learning steps keep their meaning through due times
+// instead: a card on its 10-minute step is due again in 10 minutes, and the
+// done screen says so rather than making you do it right now.
+let reviewQueue = [];       // ids left in the current round
+let reviewRound = 1;        // 1 = today's due pile, 2 = the ones missed in round 1
+let reviewRoundTotal = 0;
+let reviewRoundDone = 0;
+let reviewMissed = [];      // ids answered Again during round 1
+let reviewSessionIds = [];  // every card in this sitting, for the done screen
 
 // What scheduleCard() would do for this grade, without touching the card.
 // Fuzz is off so the number under the button is the number you'd get.
@@ -4790,14 +4988,51 @@ function openReviewSession(lang) {
     .sort((a, b) => a.due - b.due || a.createdAt - b.createdAt)
     .map((c) => c.id);
   if (!reviewQueue.length) return;
-  reviewTotal = reviewQueue.length;
-  reviewFinished = 0;
+  reviewSessionIds = reviewQueue.slice();
+  reviewMissed = [];
+  startReviewRound(1, reviewQueue);
+  setReviewDoneVisible(false);
   $("reviewScreen").classList.remove("hidden");
   showReviewCard();
 }
 
+function startReviewRound(round, ids) {
+  reviewRound = round;
+  reviewQueue = ids.slice();
+  reviewRoundTotal = reviewQueue.length;
+  reviewRoundDone = 0;
+}
+
+function setReviewDoneVisible(done) {
+  $("reviewDone").classList.toggle("hidden", !done);
+  $("reviewCard").classList.toggle("hidden", done);
+  $("reviewFoot").classList.toggle("hidden", done);
+}
+
+// The end of the sitting, said out loud — closing the screen silently is
+// what made it impossible to tell you were finished.
+function showReviewDone() {
+  const ids = new Set(reviewSessionIds);
+  const touched = loadFlashcards().filter((c) => ids.has(c.id));
+  const comingBack = touched
+    .filter((c) => isCardDue(c, dayEndMs(0)))
+    .sort((a, b) => a.due - b.due);
+  const n = reviewSessionIds.length;
+
+  $("reviewProgress").innerHTML = `<b>${n}</b>/${n}`;
+  $("reviewTrackFill").style.width = "100%";
+  $("reviewDoneSub").textContent = `${n} card${n === 1 ? "" : "s"} reviewed`;
+  $("reviewDoneNext").textContent = comingBack.length
+    ? `${comingBack.length} still learning — back in ` +
+      `${formatDelay(Math.max(comingBack[0].due - Date.now(), MINUTE_MS))} ` +
+      `to lock ${comingBack.length === 1 ? "it" : "them"} in.`
+    : "Nothing else due today.";
+  setReviewDoneVisible(true);
+}
+
 function closeReviewSession() {
   $("reviewScreen").classList.add("hidden");
+  setReviewDoneVisible(false);
   renderFlashcardsScreen();
 }
 
@@ -4810,8 +5045,10 @@ function showReviewCard() {
   const card = currentReviewCard();
   if (!card) { closeReviewSession(); return; }
 
-  $("reviewProgress").innerHTML = `<b>${reviewFinished}</b>/${reviewTotal}`;
-  $("reviewTrackFill").style.width = `${(reviewFinished / reviewTotal) * 100}%`;
+  // Position in the pile, 1-based: the first card reads 1/N and the last N/N.
+  const label = reviewRound === 2 ? '<span class="review-round">Missed</span> ' : "";
+  $("reviewProgress").innerHTML = `${label}<b>${reviewRoundDone + 1}</b>/${reviewRoundTotal}`;
+  $("reviewTrackFill").style.width = `${(reviewRoundDone / reviewRoundTotal) * 100}%`;
 
   $("reviewWord").textContent = card.word;
   $("reviewPlayBtn").classList.toggle("hidden", !card.hasAudio);
@@ -4866,25 +5103,29 @@ $("reviewCard").addEventListener("click", (e) => {
 $("reviewGrades").addEventListener("click", (e) => {
   const btn = e.target.closest(".grade-btn");
   if (!btn) return;
+  const grade = Number(btn.dataset.grade);
   const id = reviewQueue.shift();
   const cards = loadFlashcards();
   const card = cards.find((c) => c.id === id);
   if (card) {
-    scheduleCard(card, Number(btn.dataset.grade));
+    scheduleCard(card, grade);
     saveFlashcards(cards);
     updateDueBadge();
-    if (card.due - Date.now() <= SESSION_HORIZON_MS) {
-      // Still on a learning step — show it again before the sitting ends.
-      reviewQueue.splice(Math.min(REQUEUE_GAP, reviewQueue.length), 0, id);
-    } else {
-      reviewFinished += 1;
-    }
   }
-  if (!reviewQueue.length) closeReviewSession();
-  else showReviewCard();
+  reviewRoundDone += 1;
+  // A miss gets exactly one more look at the end of this sitting — never a
+  // third, so a card you keep failing can't hold the session open.
+  if (reviewRound === 1 && grade === 0) reviewMissed.push(id);
+
+  if (reviewQueue.length) showReviewCard();
+  else if (reviewRound === 1 && reviewMissed.length) {
+    startReviewRound(2, reviewMissed);
+    showReviewCard();
+  } else showReviewDone();
 });
 
 $("closeReviewBtn").addEventListener("click", closeReviewSession);
+$("reviewDoneBtn").addEventListener("click", closeReviewSession);
 
 /* ---------------------------------------------------------------------- */
 /* UI wiring                                                              */
@@ -5199,31 +5440,38 @@ $("savePracticeBtn").addEventListener("click", () => {
 // mode has no notion of "reply without a user turn", so it runs one extra chat
 // call with a throwaway nudge that is never kept in the history.
 async function economyKickoffScene(settings) {
-  const stillLive = () => currentState !== "idle" && currentState !== "error";
+  const turn = economyTurnId;
+  const current = () => turn === economyTurnId;
+  let replyShown = false;
   try {
     setState("thinking");
     const replyText = await economyChat(settings, economyMessages.concat([{
       role: "system",
       content: "Begin now: say your opening line. The learner has not said anything yet.",
     }]));
-    if (!replyText || !stillLive()) {
-      if (stillLive()) setState("ready");
+    if (!current()) return;
+    if (!replyText) {
+      setState("ready");
       return;
     }
     economyMessages.push({ role: "assistant", content: replyText });
     setTranscriptFinal("assistant", replyText);
+    replyShown = true;
     holdSuggestions();
     refreshSuggestions(); // the opening line is the first thing to answer
 
-    setState("assistant_speaking");
     const speech = await economySpeak(replyText, settings);
-    if (!stillLive()) return;
+    if (!current()) { URL.revokeObjectURL(speech.url); return; }
+    setState("assistant_speaking");
     await playEconomyAudio(speech.url);
+    if (!current()) return;
     if (currentState === "assistant_speaking") setState("ready");
     finishCoachTurn();
   } catch (err) {
+    if (!current()) return;
     console.error("[VoiceCoach] scene kickoff failed:", err);
-    if (stillLive()) setState("error", humanizeError(err));
+    if (replyShown) finishCoachTurn();
+    showTurnNote(`${humanizeError(err)} Tap the mic to carry on.`);
   }
 }
 
@@ -5286,6 +5534,7 @@ $("saveSetupBtn").addEventListener("click", () => {
 });
 
 $("orbBtn").addEventListener("click", () => {
+  primeAudioOutput(); // has to happen inside the tap itself — see its comment
   if (currentState === "idle" || currentState === "error") {
     startSession();
   } else if (currentState !== "connecting") {
