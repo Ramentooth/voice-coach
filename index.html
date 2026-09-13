@@ -459,6 +459,22 @@
     text-underline-offset:4px;
   }
   .gloss-word.just-picked{ animation:glossSaved .6s ease; }
+
+  /* Pronunciation over the word, Duolingo-style: each word becomes a little
+     column with its respelling on top, so a sentence still reads as one and
+     every reading sits over the word it belongs to.                         */
+  .rb{ display:inline-flex; flex-direction:column; align-items:center; vertical-align:bottom; max-width:100%; }
+  .rb-say{ font-size:.7em; line-height:1.3; color:var(--accent2); font-style:italic; font-weight:400; white-space:nowrap; }
+  .rb-src{ line-height:1.3; }
+  .ruby-line{ display:flex; flex-wrap:wrap; align-items:flex-end; gap:3px 7px; }
+  .suggestion .rb-say{ font-size:10px; }
+  .fc-row .rb, .pick-word .rb{ align-items:flex-start; }
+  .fc-word .rb-say{ font-size:10px; }
+  .pick-word .rb-say{ font-size:11px; }
+  .review-word .rb-say{ font-size:16px; white-space:normal; }
+  /* The Aa breakdown with the setting on: respelling above, meaning below. */
+  .bubble.say-above .gloss-word{ align-items:center; }
+  .bubble.say-above .g-say{ order:-1; }
   @keyframes glossSaved{
     0%  { background:rgba(107,212,127,.28); }
     100%{ background:transparent; }
@@ -666,6 +682,9 @@
     overflow:visible;
     text-overflow:clip;
   }
+  /* With the respelling already over every word, a picked card just glows:
+     sliding the English away would swap the meaning for a repeat.          */
+  .suggestion.has-ruby.is-picked .suggestion-flip-track{ transform:none; }
 
   /* Marks a suggestion built out of a word already in the learner's deck. */
   .suggestion-mark{
@@ -860,6 +879,9 @@
     padding:24px;
     z-index:10;
   }
+  /* The card editor also opens from the full-screen review (20), so it sits
+     above that, and under the toast (30).                                  */
+  #wordModal{ z-index:25; }
   .modal{
     width:100%;
     max-width:420px;
@@ -996,6 +1018,23 @@
   .fc-stat-n{ font-size:19px; font-weight:700; }
   .fc-stat-l{ font-size:11px; color:var(--dim); }
   .fc-hero .btn-primary{ width:100%; }
+  .fc-hero-due{ width:100%; display:flex; flex-direction:column; align-items:center; gap:2px; }
+  .fc-hero-done{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:8px;
+    padding:0 4px 20px;
+  }
+  .fc-done-badge{ width:92px; height:77px; animation:donePop .45s cubic-bezier(.3,1.4,.5,1) both; }
+  .fc-done-title{ font-size:22px; font-weight:700; }
+  .fc-done-sub{ font-size:15px; color:var(--dim); line-height:1.45; max-width:280px; }
+  .fc-done-sub b{ color:var(--fg); white-space:nowrap; }
+  @keyframes donePop{
+    from{ transform:scale(.6); opacity:0; }
+    to  { transform:none; opacity:1; }
+  }
 
   .fc-deck-section{ display:flex; flex-direction:column; gap:10px; }
   .fc-section-title{ font-size:16px; font-weight:600; }
@@ -1047,11 +1086,13 @@
   .fc-translation{ font-size:12px; color:var(--dim); margin-top:2px; }
   .fc-due{ font-size:11px; color:var(--dim); white-space:nowrap; }
   .fc-due.is-due{ color:var(--fg); font-weight:700; }
-  .fc-delete{
+  .fc-edit{
+    flex-shrink:0;
     background:transparent; border:none; color:var(--dim);
-    cursor:pointer; font-size:14px; padding:4px 6px; line-height:1;
+    cursor:pointer; padding:4px; line-height:0;
   }
-  .fc-delete:hover{ color:var(--danger); }
+  .fc-edit svg{ width:16px; height:16px; }
+  .fc-edit:hover{ color:var(--fg); }
   .play-btn{
     flex-shrink:0;
     width:30px;
@@ -1522,21 +1563,36 @@
 
       <div class="fc-deck-body">
         <div class="fc-hero">
-          <div class="fc-hero-count" id="fcHeroCount">0</div>
-          <div class="fc-hero-label">cards for today</div>
-          <div class="fc-hero-stats">
-            <div class="fc-stat">
-              <span class="fc-stat-n" id="fcDueNew">0</span>
-              <span class="fc-stat-l">Not studied</span>
+          <div class="fc-hero-due" id="fcHeroDue">
+            <div class="fc-hero-count" id="fcHeroCount">0</div>
+            <div class="fc-hero-label">cards ready to study</div>
+            <div class="fc-hero-stats">
+              <div class="fc-stat">
+                <span class="fc-stat-n" id="fcDueNew">0</span>
+                <span class="fc-stat-l">Not studied</span>
+              </div>
+              <div class="fc-stat">
+                <span class="fc-stat-n" id="fcDueLearning">0</span>
+                <span class="fc-stat-l">Learning</span>
+              </div>
+              <div class="fc-stat">
+                <span class="fc-stat-n" id="fcDueMastered">0</span>
+                <span class="fc-stat-l">Mastered</span>
+              </div>
             </div>
-            <div class="fc-stat">
-              <span class="fc-stat-n" id="fcDueLearning">0</span>
-              <span class="fc-stat-l">Learning</span>
-            </div>
-            <div class="fc-stat">
-              <span class="fc-stat-n" id="fcDueMastered">0</span>
-              <span class="fc-stat-l">Mastered</span>
-            </div>
+          </div>
+          <!-- Nothing ready yet: how long until something is. -->
+          <div class="fc-hero-done hidden" id="fcHeroDone">
+            <svg class="fc-done-badge" viewBox="0 0 100 84" aria-hidden="true">
+              <path d="M19 17L20.6 21.4L25 23L20.6 24.6L19 29L17.4 24.6L13 23L17.4 21.4Z" fill="#7b83ff"/>
+              <circle cx="15" cy="51" r="2.2" fill="#6aa9f0"/>
+              <circle cx="83" cy="22" r="2.4" fill="#f0a35e"/>
+              <path d="M84 45L85.3 48.7L89 50L85.3 51.3L84 55L82.7 51.3L79 50L82.7 48.7Z" fill="#6aa9f0"/>
+              <polygon fill="#5ec26a" points="50.0,15.0 56.1,19.3 63.5,18.6 66.6,25.4 73.4,28.5 72.7,35.9 77.0,42.0 72.7,48.1 73.4,55.5 66.6,58.6 63.5,65.4 56.1,64.7 50.0,69.0 43.9,64.7 36.5,65.4 33.4,58.6 26.6,55.5 27.3,48.1 23.0,42.0 27.3,35.9 26.6,28.5 33.4,25.4 36.5,18.6 43.9,19.3"/>
+              <path d="M38.5 42.5L46.5 50.5L61.5 34.5" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div class="fc-done-title">All done for now!</div>
+            <div class="fc-done-sub">You'll have more cards to practice in <b id="fcDoneWait"></b></div>
           </div>
           <button class="btn btn-primary" id="fcStudyBtn">Study cards</button>
         </div>
@@ -1624,7 +1680,7 @@
       <button class="btn btn-ghost" id="regeneratePhoneticBtn" style="padding:9px 14px; font-size:13px; margin-top:8px;">
         Redo respelling
       </button>
-      <div class="hint" style="margin-top:6px;">Shown as the hint when you're stuck during review.</div>
+      <div class="hint" id="wordPronunciationHint" style="margin-top:6px;">Shown as the hint when you're stuck during review.</div>
     </div>
     <div class="field">
       <label for="wordContextInput">Context</label>
@@ -1662,6 +1718,10 @@
       <button class="btn btn-ghost" id="cancelWordBtn">Cancel</button>
       <button class="btn btn-primary" id="saveWordBtn" style="flex:1;">Save flashcard</button>
     </div>
+    <!-- Edit mode only. -->
+    <button class="btn btn-ghost hidden" id="deleteCardBtn" style="color:var(--danger); border-color:var(--danger);">
+      Delete flashcard
+    </button>
   </div>
 </div>
 
@@ -1676,7 +1736,9 @@
       </svg>
     </button>
     <div class="review-progress" id="reviewProgress">0/0</div>
-    <div class="review-head-spacer"></div>
+    <button class="review-icon-btn" id="editReviewCardBtn" aria-label="Edit this card" title="Edit this card">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+    </button>
   </div>
   <div class="review-track"><div class="review-track-fill" id="reviewTrackFill"></div></div>
 
@@ -1828,6 +1890,13 @@
         <span>Reply suggestions</span>
       </label>
       <div class="hint" style="margin-top:6px;">During a call, show a few things you could say next, with English translations.</div>
+    </div>
+    <div class="field">
+      <label class="check-row" for="s_pronunciationAboveInput">
+        <input type="checkbox" id="s_pronunciationAboveInput" />
+        <span>Pronunciation above words</span>
+      </label>
+      <div class="hint" style="margin-top:6px;">For languages not written in the Latin alphabet (Japanese, Chinese, Korean, Russian, Tamil, Urdu). Shows how to say each word on top of it in suggestions and flashcards, and on a coach line once you tap Aa.</div>
     </div>
     <div class="field">
       <label for="s_retentionSelect">Target retention</label>
@@ -2489,6 +2558,80 @@ async function generatePhonetic(word, langCode, context) {
   return sanitizePhonetic(parsed.respelling);
 }
 
+/* ---- pronunciation above the word ---------------------------------------- */
+
+// Scripts a learner can't sound out from the letters alone. Latin-script
+// languages are left as they are: the spelling already gets you most of the
+// way to the sound, and a respelling over every word would just be clutter.
+const NON_LATIN_LANGUAGES = new Set(["ko", "ja", "zh", "ru", "ta", "ur"]);
+
+// Suggestions and flashcards show it automatically; a coach line only once
+// its Aa breakdown is open. Undefined on saves that predate the setting — on.
+function pronunciationAbove(langCode) {
+  const settings = loadSettings();
+  return NON_LATIN_LANGUAGES.has(langCode) && !!settings && settings.pronunciationAbove !== false;
+}
+
+// Tone digits are what gets stored and what the models write — they're easy
+// to type into a card on a phone — but marks are what a learner reads, so
+// Chinese respellings are converted on the way to the screen: "shyeh4-shyeh0"
+// shows as "shyèh-shyeh". Display only, so it costs no tokens or time.
+// Combining macron, acute, caron, grave; NFC folds each onto its vowel.
+const TONE_MARKS = { 1: "\u0304", 2: "\u0301", 3: "\u030C", 4: "\u0300" };
+
+function toneMarked(syllable, tone) {
+  const mark = TONE_MARKS[tone];
+  if (!mark) return syllable; // 0 and 5 are the neutral tone: no mark
+  // Pinyin's placement rule, carried over to the respelling: an a or e takes
+  // the mark; failing that, the first vowel of the last run of vowels ("yǒo",
+  // "gǒu") — except pinyin's iu/ui, which mark the second ("xiū", "duì").
+  let at = syllable.search(/[ae]/i);
+  if (at < 0) {
+    const runs = [...syllable.matchAll(/[iou]+/gi)];
+    const last = runs[runs.length - 1];
+    if (last) at = last.index + (/^(iu|ui)$/i.test(last[0]) ? 1 : 0);
+    else at = syllable.search(/[mn]/i); // syllabic m/n, as in 嗯
+  }
+  if (at < 0) return syllable + tone;
+  return (syllable.slice(0, at + 1) + mark + syllable.slice(at + 1)).normalize("NFC");
+}
+
+function displayRespelling(say, langCode) {
+  if (!say || langCode !== "zh") return say || "";
+  return say.replace(/([A-Za-z]+)([0-5])(?![0-9])/g, (_, syllable, tone) => toneMarked(syllable, tone));
+}
+
+function rubyHtml(word, say, langCode) {
+  say = displayRespelling(say, langCode);
+  return `<span class="rb"><span class="rb-say">${say ? escapeHtml(say) : "&nbsp;"}</span>` +
+    `<span class="rb-src">${escapeHtml(word)}</span></span>`;
+}
+
+// Lays word-by-word respellings back over the sentence as it was actually
+// written. Walking the original text, rather than printing the pairs, keeps
+// punctuation and spacing the model dropped; a pair that isn't in the text
+// at all means the split can't be trusted, and the caller falls back.
+function alignRuby(text, pairs) {
+  const out = [];
+  let cursor = 0;
+  const addGap = (gap) => {
+    if (!gap) return;
+    // Punctuation rides along with the word before it instead of standing
+    // alone as its own column.
+    if (!/[\p{L}\p{N}]/u.test(gap) && out.length) out[out.length - 1].word += gap;
+    else out.push({ word: gap, say: "" });
+  };
+  for (const pair of pairs) {
+    const at = text.indexOf(pair.word, cursor);
+    if (at < 0) return null;
+    addGap(text.slice(cursor, at).trim());
+    out.push({ word: pair.word, say: pair.say });
+    cursor = at + pair.word.length;
+  }
+  addGap(text.slice(cursor).trim());
+  return out;
+}
+
 // Markers the segmentation prompt inserts at boundaries — chosen to be
 // characters that essentially never appear in real conversational text.
 const WORD_DELIM = "␟";
@@ -2986,12 +3129,24 @@ function scheduleCard(card, grade, options) {
 /* Due dates                                                              */
 /* ---------------------------------------------------------------------- */
 
-// End of the local day, N days out. Everything scheduled before this counts
-// as "due today", so a card put 10 minutes away is still on today's pile.
-function dayEndMs(offsetDays) {
-  const d = new Date();
-  d.setHours(23, 59, 59, 999);
-  return d.getTime() + (offsetDays || 0) * DAY_MS;
+// When a card can actually be studied. A card on a day interval is due from
+// the start of its day — the "3d" under Good means Thursday, not Thursday at
+// whatever time you happened to be reviewing — while a card on a learning
+// step is due at that exact minute, so "10m" really is ten minutes. The day
+// turns over at 4am, as in Anki, so a session past midnight is still "today".
+// (This used to be "anything due before midnight", which let a card on a
+// ten-minute step be studied again straight away.)
+const DAY_ROLLOVER_HOUR = 4;
+
+function studyDayStart(ms) {
+  const d = new Date(ms);
+  if (d.getHours() < DAY_ROLLOVER_HOUR) d.setDate(d.getDate() - 1);
+  d.setHours(DAY_ROLLOVER_HOUR, 0, 0, 0);
+  return d.getTime();
+}
+
+function cardAvailableAt(card) {
+  return card.state === "review" ? studyDayStart(card.due) : card.due;
 }
 
 // "YYYY-MM-DD" -> end of that local day. Only used to migrate old saves.
@@ -3001,20 +3156,35 @@ function parseDayEnd(str) {
   return new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999).getTime();
 }
 
-function isCardDue(card, horizon) {
-  return card.due <= (horizon == null ? dayEndMs(0) : horizon);
+function isCardDue(card, now) {
+  return cardAvailableAt(card) <= (now == null ? Date.now() : now);
 }
 
 function dueCount(cards) {
-  const horizon = dayEndMs(0);
-  return (cards || loadFlashcards()).filter((c) => isCardDue(c, horizon)).length;
+  const now = Date.now();
+  return (cards || loadFlashcards()).filter((c) => isCardDue(c, now)).length;
 }
 
-// "in 3 days" style label for a card that isn't due yet.
+// The soonest a card in this pile that isn't ready yet will be — what the
+// all-done screen counts down to. Null when nothing is waiting.
+function nextAvailableAt(cards, now) {
+  let next = null;
+  cards.forEach((card) => {
+    const at = cardAvailableAt(card);
+    if (at > now && (next == null || at < next)) next = at;
+  });
+  return next;
+}
+
+// Label for a card in the deck list. A learning step is minutes away, so it
+// gets a countdown; a day interval gets the day.
 function formatDueLabel(card) {
-  const days = Math.ceil((card.due - Date.now()) / DAY_MS);
-  if (days <= 0) return "Today";
-  if (days === 1) return "Tomorrow";
+  const now = Date.now();
+  const at = cardAvailableAt(card);
+  if (at <= now) return "Due";
+  if (card.state !== "review") return `in ${formatDelay(at - now)}`;
+  const days = Math.round((at - studyDayStart(now)) / DAY_MS);
+  if (days <= 1) return "Tomorrow";
   if (days < 30) return `${days}d`;
   if (days < 365) return `${(days / 30).toFixed(1)}mo`;
   return `${(days / 365).toFixed(1)}y`;
@@ -3029,6 +3199,15 @@ function formatDelay(ms) {
   if (days < 30) return `${Math.round(days)}d`;
   if (days < 365) return `${(days / 30).toFixed(1)}mo`;
   return `${(days / 365).toFixed(1)}y`;
+}
+
+// Spelled out, for the all-done screen: "13 hours", "4 minutes".
+function formatWait(ms) {
+  const minutes = Math.max(1, Math.ceil(ms / MINUTE_MS));
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 36) return `${hours} hour${hours === 1 ? "" : "s"}`;
+  return `${Math.round(ms / DAY_MS)} days`;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -3189,7 +3368,17 @@ function renderSuggestions(items) {
 
     const text = document.createElement("div");
     text.className = "suggestion-text";
-    text.textContent = item.text;
+    if (item.ruby) {
+      text.classList.add("ruby-line");
+      // The words are laid out as flex columns, which ignore the text's own
+      // direction, so Urdu has to be told it runs right to left.
+      if (currentSessionLanguage === "ur") text.dir = "rtl";
+      text.innerHTML = item.ruby
+        .map((p) => rubyHtml(p.word, p.say, currentSessionLanguage)).join("");
+      row.classList.add("has-ruby");
+    } else {
+      text.textContent = item.text;
+    }
     row.appendChild(text);
 
     // Two stacked lines in a one-line window: English now, respelling after
@@ -3203,7 +3392,7 @@ function renderSuggestions(items) {
     translation.textContent = item.translation || " ";
     const phonetic = document.createElement("div");
     phonetic.className = "suggestion-line suggestion-phonetic";
-    phonetic.textContent = item.phonetic || "…";
+    phonetic.textContent = displayRespelling(item.phonetic, currentSessionLanguage) || "…";
     track.appendChild(translation);
     track.appendChild(phonetic);
     flip.appendChild(track);
@@ -3228,6 +3417,7 @@ function expandSuggestion(row) {
   const flip = row.querySelector(".suggestion-flip");
   const phonetic = row.querySelector(".suggestion-phonetic");
   row.classList.add("is-picked");
+  if (row.classList.contains("has-ruby")) return; // glows only — see the CSS
   if (flip && phonetic) flip.style.height = `${phonetic.offsetHeight}px`;
 }
 
@@ -3255,14 +3445,14 @@ $("suggestions").addEventListener("click", async (e) => {
 
   // The respelling normally arrives with the suggestion; only fetch one if
   // that field came back empty, in which case "…" is already on screen.
-  if (item.phonetic) return;
+  if (item.phonetic || item.ruby) return;
   const generation = suggestionGeneration;
   try {
     const phonetic = await generatePhonetic(item.text, currentSessionLanguage);
     if (generation !== suggestionGeneration) return;
     item.phonetic = phonetic;
     const line = row.querySelector(".suggestion-phonetic");
-    if (line) line.textContent = phonetic || item.text;
+    if (line) line.textContent = displayRespelling(phonetic, currentSessionLanguage) || item.text;
   } catch (err) {
     console.error("[VoiceCoach] suggestion respelling failed:", err);
     const line = row.querySelector(".suggestion-phonetic");
@@ -3284,12 +3474,12 @@ function finishCoachTurn() {
 // Feeding these to the suggester turns a reply into a second rep of a card
 // they'd otherwise only ever see in review.
 function studiedWordsForSuggestions(langCode) {
-  const horizon = dayEndMs(0);
+  const now = Date.now();
   return loadFlashcards()
     .filter((c) => (c.lang || "en") === langCode && c.word)
     .sort((a, b) => {
-      const aDue = isCardDue(a, horizon) ? 0 : 1;
-      const bDue = isCardDue(b, horizon) ? 0 : 1;
+      const aDue = isCardDue(a, now) ? 0 : 1;
+      const bDue = isCardDue(b, now) ? 0 : 1;
       return aDue - bDue || a.due - b.due;
     })
     .slice(0, 30);
@@ -3330,6 +3520,10 @@ async function refreshSuggestions() {
   const studiedList = studied
     .map((c) => `${c.word}${c.translation ? ` (${c.translation})` : ""}`)
     .join("; ");
+  // Word-by-word readings replace the one-line respelling when they're going
+  // to be shown over the words; the language's respelling notes go in either way.
+  const withRuby = pronunciationAbove(currentSessionLanguage);
+  const phoneticNote = PHONETIC_LANGUAGE_NOTES[currentSessionLanguage];
 
   try {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -3361,10 +3555,19 @@ async function refreshSuggestions() {
                   `cost of a sensible reply, and never force one in where it ` +
                   `doesn't fit:\n${studiedList}\n`
                 : "") +
+              (phoneticNote ? `\nFor respellings in ${langName}: ${phoneticNote}\n` : "") +
               `\nRespond with strict JSON: {"suggestions": [{"text": "...", ` +
-              `"translation": "...", "phonetic": "..."}]}. "text" is the ` +
-              `${langName} sentence the learner would say; "translation" is its ` +
-              `plain English meaning; "phonetic" is ${PHONETIC_SPEC}`,
+              `"translation": "...", ` +
+              (withRuby ? `"ruby": [["...", "..."]]}]}. ` : `"phonetic": "..."}]}. `) +
+              `"text" is the ${langName} sentence the learner would say; ` +
+              `"translation" is its plain English meaning; ` +
+              (withRuby
+                ? `"ruby" is that sentence split into its words, in order, as ` +
+                  `[word, respelling] pairs — each word exactly as it is written ` +
+                  `in "text" (split at real word boundaries, which for Japanese ` +
+                  `and Chinese means by word and not by character), and its ` +
+                  `respelling, which is ${PHONETIC_SPEC}`
+                : `"phonetic" is ${PHONETIC_SPEC}`),
           },
           { role: "user", content: recent },
         ],
@@ -3380,11 +3583,24 @@ async function refreshSuggestions() {
     }
     if (generation !== suggestionGeneration) return; // conversation moved on
     const items = (Array.isArray(parsed.suggestions) ? parsed.suggestions : [])
-      .map((s) => ({
-        text: String(s?.text || "").trim(),
-        translation: String(s?.translation || "").trim(),
-        phonetic: sanitizePhonetic(s?.phonetic),
-      }))
+      .map((s) => {
+        const text = String(s?.text || "").trim();
+        const pairs = (Array.isArray(s?.ruby) ? s.ruby : [])
+          .map((p) => ({
+            word: String((Array.isArray(p) ? p[0] : p?.word) || "").trim(),
+            say: sanitizePhonetic(Array.isArray(p) ? p[1] : p?.respelling),
+          }))
+          .filter((p) => p.word);
+        return {
+          text,
+          translation: String(s?.translation || "").trim(),
+          ruby: pairs.length ? alignRuby(text, pairs) : null,
+          // The readings joined up are the sentence's respelling, which is
+          // what the card slides to if they won't line up with the text.
+          phonetic: sanitizePhonetic(s?.phonetic) ||
+            pairs.map((p) => p.say).filter(Boolean).join(" "),
+        };
+      })
       .filter((s) => s.text)
       .slice(0, 3);
     items.forEach((s) => { s.usesStudied = matchStudiedWord(s.text, studied); });
@@ -3481,9 +3697,12 @@ function deckWordsFor(langCode) {
 }
 
 function renderGloss(bubble, words) {
+  const lang = bubble._lang || currentSessionLanguage;
   bubble.textContent = "";
   bubble.classList.add("is-glossed");
-  const deck = deckWordsFor(bubble._lang || currentSessionLanguage);
+  // Respelling over the word rather than under it, with that setting on.
+  bubble.classList.toggle("say-above", pronunciationAbove(lang));
+  const deck = deckWordsFor(lang);
   words.forEach((entry) => {
     const col = document.createElement("div");
     col.className = "gloss-word";
@@ -3494,7 +3713,7 @@ function renderGloss(bubble, words) {
     if (entry.respelling) {
       const say = document.createElement("div");
       say.className = "g-say";
-      say.textContent = entry.respelling;
+      say.textContent = displayRespelling(entry.respelling, lang);
       col.appendChild(say);
     }
     if (entry.meaning) {
@@ -3506,7 +3725,6 @@ function renderGloss(bubble, words) {
     // Punctuation the model returned as its own "word" isn't worth a card.
     const word = cleanWord(entry.word);
     if (word) {
-      const lang = bubble._lang || currentSessionLanguage;
       col.dataset.word = word;
       col.classList.add("is-savable");
       col.classList.toggle("is-saved", deck.has(word.toLowerCase()));
@@ -3596,12 +3814,16 @@ function renderCallPicks() {
     text.className = "pick-text";
     const top = document.createElement("div");
     top.className = "pick-word";
-    top.textContent = pick.word;
-    if (pick.pronunciation) {
-      const say = document.createElement("span");
-      say.className = "pick-say";
-      say.textContent = pick.pronunciation;
-      top.appendChild(say);
+    if (pick.pronunciation && pronunciationAbove(pick.lang)) {
+      top.innerHTML = rubyHtml(pick.word, pick.pronunciation, pick.lang);
+    } else {
+      top.textContent = pick.word;
+      if (pick.pronunciation) {
+        const say = document.createElement("span");
+        say.className = "pick-say";
+        say.textContent = displayRespelling(pick.pronunciation, pick.lang);
+        top.appendChild(say);
+      }
     }
     const en = document.createElement("div");
     en.className = "pick-en";
@@ -3754,7 +3976,7 @@ function showToast(message) {
 }
 
 function clearGloss(bubble) {
-  bubble.classList.remove("is-glossed");
+  bubble.classList.remove("is-glossed", "say-above");
   bubble.textContent = bubble._plainText || "";
 }
 
@@ -4743,6 +4965,7 @@ async function regenerateWordAudio() {
     const blob = await synthesizeSelectedWord(word);
     if (generation !== wordAudioGeneration) return;
     setPendingAudioPreview(blob);
+    btn.textContent = "Regenerate audio";
 
     if (editingCardId) {
       await saveAudioClip(editingCardId, blob);
@@ -4752,6 +4975,7 @@ async function regenerateWordAudio() {
         card.hasAudio = true;
         saveFlashcards(cards);
         renderFlashcardsScreen();
+        refreshReviewCard(); // the play button appears on the card in review
       }
       showWordAudioStatus("Audio regenerated and saved.");
     } else {
@@ -4954,11 +5178,22 @@ $("deepDiveInput").addEventListener("keydown", (e) => {
   }
 });
 
+// The field shows what's stored — for Chinese that's tone digits, since
+// they're what you can type — so say how they'll look everywhere else.
+function setPronunciationHint(langCode) {
+  $("wordPronunciationHint").textContent = langCode === "zh"
+    ? "Type tone numbers (shyeh4) — they show as tone marks (shyèh) everywhere else."
+    : "Shown as the hint when you're stuck during review.";
+}
+
 async function openWordModal(word, context, contextTranslation) {
   const generation = ++wordAudioGeneration;
   editingCardId = null;
   $("wordModalTitle").textContent = "Add flashcard";
   $("saveWordBtn").textContent = "Save flashcard";
+  $("deleteCardBtn").classList.add("hidden");
+  $("regenerateAudioBtn").textContent = "Regenerate audio";
+  setPronunciationHint(currentSessionLanguage);
   $("wordInput").value = word;
   $("wordContextInput").value = context;
   // Hidden for an English session, where the sentence needs no translating.
@@ -5014,6 +5249,9 @@ async function openEditCardModal(card) {
   $("wordContextEnInput").value = card.contextTranslation || "";
   $("wordContextEnInput").placeholder = "";
   $("saveWordBtn").disabled = false;
+  $("deleteCardBtn").classList.remove("hidden");
+  setPronunciationHint(card.lang || "en");
+  $("regenerateAudioBtn").textContent = card.hasAudio ? "Regenerate audio" : "Generate audio";
   resetDeepDive(card.lang);
   clearPendingAudioPreview();
   $("wordModal").classList.remove("hidden");
@@ -5030,7 +5268,7 @@ async function openEditCardModal(card) {
       console.error("[VoiceCoach] loadAudioClip failed:", err);
     }
   } else {
-    showWordAudioStatus("No audio saved for this card yet — regenerate to add one.");
+    showWordAudioStatus("No audio saved for this card yet — tap Generate audio to add one.");
   }
 
   // Cards saved before every language got a respelling have no hint to show
@@ -5056,6 +5294,22 @@ $("cancelWordBtn").addEventListener("click", () => {
   $("wordModal").classList.add("hidden");
 });
 
+$("deleteCardBtn").addEventListener("click", () => {
+  const id = editingCardId;
+  if (!id) return;
+  const card = loadFlashcards().find((c) => c.id === id);
+  const label = card ? `"${card.word}"` : "this card";
+  if (!confirm(`Delete the flashcard for ${label}? Its review history goes with it.`)) return;
+  saveFlashcards(loadFlashcards().filter((c) => c.id !== id));
+  deleteAudioClip(id).catch(() => {});
+  wordAudioGeneration += 1;
+  editingCardId = null;
+  clearPendingAudioPreview();
+  $("wordModal").classList.add("hidden");
+  renderFlashcardsScreen();
+  if (!$("reviewScreen").classList.contains("hidden")) dropFromReview(id);
+});
+
 $("saveWordBtn").addEventListener("click", async () => {
   const word = $("wordInput").value.trim();
   const translation = $("wordTranslationInput").value.trim();
@@ -5078,6 +5332,7 @@ $("saveWordBtn").addEventListener("click", async () => {
       card.contextTranslation = contextTranslation;
       saveFlashcards(cards);
       renderFlashcardsScreen();
+      refreshReviewCard();
     }
     editingCardId = null;
     clearPendingAudioPreview();
@@ -5125,6 +5380,20 @@ function updateDueBadge() {
   badge.classList.toggle("hidden", n === 0);
 }
 
+// Due times are to the minute, so an open Cards tab can go stale: a countdown
+// that has run out should turn back into a Study button without a reload.
+function refreshCardTimers() {
+  updateDueBadge();
+  if (!$("flashcardsScreen").classList.contains("hidden") &&
+      $("reviewScreen").classList.contains("hidden")) {
+    renderFlashcardsScreen();
+  }
+}
+setInterval(refreshCardTimers, 30 * 1000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refreshCardTimers();
+});
+
 // A card is "mastered" once FSRS believes you'd still recall it three weeks
 // from now — stability is measured in exactly those days, so this is the same
 // three-week mature-card threshold Anki uses, read off the memory model
@@ -5138,7 +5407,7 @@ function cardState(card) {
 
 // Counts for one deck: the split of what's due today, and of the whole deck.
 function deckStats(cards) {
-  const horizon = dayEndMs(0);
+  const now = Date.now();
   const s = { total: cards.length, due: 0, dueNew: 0, dueLearning: 0, dueMastered: 0,
               totNew: 0, totLearning: 0, totMastered: 0 };
   cards.forEach((card) => {
@@ -5146,7 +5415,7 @@ function deckStats(cards) {
     if (state === "new") s.totNew += 1;
     else if (state === "learning") s.totLearning += 1;
     else s.totMastered += 1;
-    if (isCardDue(card, horizon)) {
+    if (isCardDue(card, now)) {
       s.due += 1;
       if (state === "new") s.dueNew += 1;
       else if (state === "learning") s.dueLearning += 1;
@@ -5180,7 +5449,7 @@ function renderFlashcardsScreen() {
 
 function renderDecksView() {
   const cards = loadFlashcards();
-  $("fcSummary").textContent = `${dueCount(cards)} due today · ${cards.length} total`;
+  $("fcSummary").textContent = `${dueCount(cards)} ready to study · ${cards.length} total`;
 
   const listEl = $("fcDeckList");
   listEl.innerHTML = "";
@@ -5192,7 +5461,10 @@ function renderDecksView() {
   Array.from(byLang.keys())
     .sort((a, b) => languageName(a).localeCompare(languageName(b)))
     .forEach((lang) => {
-      const stats = deckStats(byLang.get(lang));
+      const deckCards = byLang.get(lang);
+      const stats = deckStats(deckCards);
+      const now = Date.now();
+      const next = stats.due ? null : nextAvailableAt(deckCards, now);
       const row = document.createElement("button");
       row.type = "button";
       row.className = "fc-deck-row";
@@ -5202,8 +5474,8 @@ function renderDecksView() {
           <div class="fc-deck-row-name">${escapeHtml(languageName(lang))}</div>
           <div class="fc-deck-row-sub${stats.due ? " is-due" : ""}">${
             stats.due
-              ? `Cards for today: ${stats.due}`
-              : `All caught up · ${stats.total} card${stats.total === 1 ? "" : "s"}`
+              ? `Ready to study: ${stats.due}`
+              : next ? `All caught up · more in ${formatWait(next - now)}` : "All caught up"
           }</div>
         </div>
         <svg class="fc-deck-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
@@ -5221,7 +5493,7 @@ function openDeck(lang) {
 function renderDeckView() {
   const cards = (cardsByLang().get(activeDeckLang) || [])
     .slice()
-    .sort((a, b) => a.due - b.due || a.createdAt - b.createdAt);
+    .sort((a, b) => cardAvailableAt(a) - cardAvailableAt(b) || a.createdAt - b.createdAt);
   if (!cards.length) { // last card in the deck was deleted
     cardsView = "decks";
     activeDeckLang = null;
@@ -5234,8 +5506,14 @@ function renderDeckView() {
   $("fcDueNew").textContent = String(stats.dueNew);
   $("fcDueLearning").textContent = String(stats.dueLearning);
   $("fcDueMastered").textContent = String(stats.dueMastered);
+  // Nothing ready: the counts give way to how long until something is, and
+  // Study stays in view but switched off — the wait is the point.
+  const now = Date.now();
+  const next = stats.due ? null : nextAvailableAt(cards, now);
+  $("fcHeroDue").classList.toggle("hidden", !stats.due);
+  $("fcHeroDone").classList.toggle("hidden", !!stats.due);
+  if (next) $("fcDoneWait").textContent = formatWait(next - now);
   $("fcStudyBtn").disabled = stats.due === 0;
-  $("fcStudyBtn").textContent = stats.due ? "Study cards" : "Nothing due today";
 
   $("fcDeckTotal").textContent = String(stats.total);
   $("fcTotNew").textContent = String(stats.totNew);
@@ -5244,22 +5522,25 @@ function renderDeckView() {
   $("fcBarLearning").style.width = `${(stats.totLearning / stats.total) * 100}%`;
   $("fcBarMastered").style.width = `${(stats.totMastered / stats.total) * 100}%`;
 
-  const horizon = dayEndMs(0);
+  const ruby = pronunciationAbove(activeDeckLang);
   $("fcRows").innerHTML = cards.map((card) => {
-    const isDue = isCardDue(card, horizon);
+    const isDue = isCardDue(card, now);
+    const above = ruby && !!card.pronunciation;
     return `
       <div class="fc-row" data-id="${escapeHtml(card.id)}">
         <div class="fc-row-main">
-          <div class="fc-word">${escapeHtml(card.word)}</div>
-          ${card.pronunciation ? `<div class="fc-pronunciation">${escapeHtml(card.pronunciation)}</div>` : ""}
+          <div class="fc-word">${above ? rubyHtml(card.word, card.pronunciation, activeDeckLang) : escapeHtml(card.word)}</div>
+          ${card.pronunciation && !above ? `<div class="fc-pronunciation">${escapeHtml(displayRespelling(card.pronunciation, activeDeckLang))}</div>` : ""}
           <div class="fc-translation">${escapeHtml(card.translation)}</div>
         </div>
         ${card.hasAudio ? `
         <button class="play-btn fc-play" data-id="${escapeHtml(card.id)}" aria-label="Play audio" title="Play audio">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
         </button>` : ""}
-        <div class="fc-due${isDue ? " is-due" : ""}">${isDue ? "Due" : escapeHtml(formatDueLabel(card))}</div>
-        <button class="fc-delete" data-id="${escapeHtml(card.id)}" aria-label="Delete flashcard">✕</button>
+        <div class="fc-due${isDue ? " is-due" : ""}">${escapeHtml(formatDueLabel(card))}</div>
+        <button class="fc-edit" data-id="${escapeHtml(card.id)}" aria-label="Edit flashcard" title="Edit">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+        </button>
       </div>`;
   }).join("");
 }
@@ -5290,13 +5571,6 @@ $("fcBackBtn").addEventListener("click", () => {
 $("fcStudyBtn").addEventListener("click", () => openReviewSession(activeDeckLang));
 
 $("fcRows").addEventListener("click", (e) => {
-  const deleteBtn = e.target.closest(".fc-delete");
-  if (deleteBtn) {
-    saveFlashcards(loadFlashcards().filter((c) => c.id !== deleteBtn.dataset.id));
-    deleteAudioClip(deleteBtn.dataset.id).catch(() => {});
-    renderFlashcardsScreen();
-    return;
-  }
   const playBtn = e.target.closest(".fc-play");
   if (playBtn) {
     playCardAudio(playBtn.dataset.id);
@@ -5341,10 +5615,10 @@ function previewGrade(card, grade) {
 
 // lang is required so mixed-language reviews never happen by accident.
 function openReviewSession(lang) {
-  const horizon = dayEndMs(0);
+  const now = Date.now();
   reviewQueue = loadFlashcards()
-    .filter((c) => isCardDue(c, horizon) && (c.lang || "en") === lang)
-    .sort((a, b) => a.due - b.due || a.createdAt - b.createdAt)
+    .filter((c) => isCardDue(c, now) && (c.lang || "en") === lang)
+    .sort((a, b) => cardAvailableAt(a) - cardAvailableAt(b) || a.createdAt - b.createdAt)
     .map((c) => c.id);
   if (!reviewQueue.length) return;
   reviewSessionIds = reviewQueue.slice();
@@ -5366,6 +5640,8 @@ function setReviewDoneVisible(done) {
   $("reviewDone").classList.toggle("hidden", !done);
   $("reviewCard").classList.toggle("hidden", done);
   $("reviewFoot").classList.toggle("hidden", done);
+  // Hidden rather than removed, so the counter stays centred.
+  $("editReviewCardBtn").style.visibility = done ? "hidden" : "";
 }
 
 // The end of the sitting, said out loud — closing the screen silently is
@@ -5373,8 +5649,9 @@ function setReviewDoneVisible(done) {
 function showReviewDone() {
   const ids = new Set(reviewSessionIds);
   const touched = loadFlashcards().filter((c) => ids.has(c.id));
+  // Cards still on a minutes-long step come back later today; say when.
   const comingBack = touched
-    .filter((c) => isCardDue(c, dayEndMs(0)))
+    .filter((c) => c.state === "learning" || c.state === "relearning")
     .sort((a, b) => a.due - b.due);
   const n = reviewSessionIds.length;
 
@@ -5409,14 +5686,19 @@ function showReviewCard() {
   $("reviewProgress").innerHTML = `${label}<b>${reviewRoundDone + 1}</b>/${reviewRoundTotal}`;
   $("reviewTrackFill").style.width = `${(reviewRoundDone / reviewRoundTotal) * 100}%`;
 
-  $("reviewWord").textContent = card.word;
+  // With pronunciation-above on, a non-Latin word wears its respelling on top
+  // from the start. Otherwise the respelling is the hint, hidden until asked.
+  const ruby = !!card.pronunciation && pronunciationAbove(card.lang || "en");
+  const wordEl = $("reviewWord");
+  wordEl.classList.toggle("has-ruby", ruby);
+  if (ruby) wordEl.innerHTML = rubyHtml(card.word, card.pronunciation, card.lang || "en");
+  else wordEl.textContent = card.word;
   $("reviewPlayBtn").classList.toggle("hidden", !card.hasAudio);
   $("reviewPlayBtn").dataset.id = card.id;
 
-  // The respelling is the hint, so it starts hidden on every card.
-  $("reviewPronunciation").textContent = card.pronunciation || "";
+  $("reviewPronunciation").textContent = displayRespelling(card.pronunciation, card.lang || "en");
   $("reviewPronunciation").classList.add("hidden");
-  $("hintBtn").classList.toggle("hidden", !card.pronunciation);
+  $("hintBtn").classList.toggle("hidden", !card.pronunciation || ruby);
   $("reviewTranslation").textContent = card.translation;
   $("reviewContext").textContent = card.context || "";
   $("reviewContext").classList.toggle("hidden", !card.context);
@@ -5441,8 +5723,19 @@ function revealReviewCard() {
   $("reviewGrades").classList.remove("hidden");
   $("revealBtn").classList.add("hidden");
   // The answer includes how to say it, so the hint has nothing left to offer.
-  $("reviewPronunciation").classList.toggle("hidden", !card?.pronunciation);
+  $("reviewPronunciation").classList.toggle(
+    "hidden", !card?.pronunciation || $("reviewWord").classList.contains("has-ruby"));
   $("hintBtn").classList.add("hidden");
+}
+
+// Redraws the card on screen after it was edited from the review, keeping
+// the answer showing if it already was.
+function refreshReviewCard() {
+  if ($("reviewScreen").classList.contains("hidden")) return;
+  if (!$("reviewDone").classList.contains("hidden")) return;
+  const revealed = !$("reviewBack").classList.contains("hidden");
+  showReviewCard();
+  if (revealed) revealReviewCard();
 }
 
 $("hintBtn").addEventListener("click", (e) => {
@@ -5476,15 +5769,39 @@ $("reviewGrades").addEventListener("click", (e) => {
   // third, so a card you keep failing can't hold the session open.
   if (reviewRound === 1 && grade === 0) reviewMissed.push(id);
 
+  advanceReview();
+});
+
+// Next card, then the missed round, then the end.
+function advanceReview() {
   if (reviewQueue.length) showReviewCard();
   else if (reviewRound === 1 && reviewMissed.length) {
     startReviewRound(2, reviewMissed);
     showReviewCard();
-  } else showReviewDone();
-});
+  } else if (reviewSessionIds.length) showReviewDone();
+  else closeReviewSession();
+}
+
+// A card deleted from the editor mid-review leaves the sitting entirely, so
+// neither the counter nor the done screen counts a card that's gone.
+function dropFromReview(id) {
+  reviewMissed = reviewMissed.filter((x) => x !== id);
+  reviewSessionIds = reviewSessionIds.filter((x) => x !== id);
+  const at = reviewQueue.indexOf(id);
+  if (at < 0) return;
+  reviewQueue.splice(at, 1);
+  reviewRoundTotal -= 1;
+  if (at === 0) advanceReview();
+  else refreshReviewCard();
+}
 
 $("closeReviewBtn").addEventListener("click", closeReviewSession);
 $("reviewDoneBtn").addEventListener("click", closeReviewSession);
+
+$("editReviewCardBtn").addEventListener("click", () => {
+  const card = currentReviewCard();
+  if (card) openEditCardModal(card);
+});
 
 /* ---------------------------------------------------------------------- */
 /* UI wiring                                                              */
@@ -5921,6 +6238,7 @@ $("gearBtn").addEventListener("click", () => {
   $("s_modelInput").value = settings.model || "gpt-realtime";
   // Saves that predate this setting have it undefined — default it on.
   $("s_suggestionsInput").checked = settings.suggestions !== false;
+  $("s_pronunciationAboveInput").checked = settings.pronunciationAbove !== false;
   $("s_retentionSelect").value = String(desiredRetention());
   $("settingsModal").classList.remove("hidden");
 });
@@ -5946,6 +6264,7 @@ $("saveSettingsBtn").addEventListener("click", () => {
     instructions: $("s_instructionsInput").value.trim(),
     model: $("s_modelInput").value.trim() || "gpt-realtime",
     suggestions: $("s_suggestionsInput").checked,
+    pronunciationAbove: $("s_pronunciationAboveInput").checked,
     retention: Number($("s_retentionSelect").value) || DEFAULT_RETENTION,
   }));
   // Switching languages mid-conversation would leave a half-foreign,
@@ -5956,6 +6275,7 @@ $("saveSettingsBtn").addEventListener("click", () => {
     clearTranscript();
   }
   renderLangBar();
+  renderFlashcardsScreen(); // pronunciation-above changes how cards are drawn
   $("settingsModal").classList.add("hidden");
 });
 
