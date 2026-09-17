@@ -706,6 +706,72 @@
     padding:6px 0;
   }
 
+  /* A second, quieter strip above the reply suggestions: the learner's own
+     cards, as raw material rather than a sentence to read out. Dashed
+     borders and no gloss card styling, so the two strips never read as the
+     same kind of thing.                                                   */
+  .deck-strip{
+    flex-shrink:0;
+    width:100%;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    overflow-x:auto;
+    overflow-y:hidden;
+    padding:2px 2px 4px;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+  }
+  .deck-strip::-webkit-scrollbar{ display:none; }
+  .deck-strip-label{
+    flex:0 0 auto;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:var(--dim);
+  }
+  .deck-chip{
+    flex:0 0 auto;
+    max-width:min(60%, 220px);
+    text-align:left;
+    background:transparent;
+    border:1px dashed var(--border);
+    border-radius:12px;
+    padding:5px 10px;
+    color:inherit;
+    font:inherit;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+    transition:border-color .2s ease, box-shadow .2s ease, opacity .2s ease;
+  }
+  .deck-chip-word{ font-size:14px; font-weight:600; line-height:1.25; }
+  .deck-chip-en{
+    font-size:11px;
+    color:var(--dim);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  /* Hidden until tapped, so the strip stays one line tall. */
+  .deck-chip-say{
+    font-size:11px;
+    color:var(--accent2);
+    font-style:italic;
+    max-height:0;
+    overflow:hidden;
+    transition:max-height .25s ease;
+  }
+  .deck-chip.is-open{
+    border-style:solid;
+    border-color:var(--accent2);
+    box-shadow:0 0 0 1px var(--accent2), 0 0 18px -8px var(--accent2);
+  }
+  .deck-chip.is-open .deck-chip-say{ max-height:34px; }
+  /* Worked into the conversation already: dimmed and ticked, so the strip
+     doubles as a tally of what you've managed to use.                     */
+  .deck-chip.is-used{ opacity:.45; }
+  .deck-chip.is-used .deck-chip-word::after{ content:" \2713"; color:#6bd47f; }
+
   .check-row{ display:flex; align-items:center; gap:10px; cursor:pointer; }
   .check-row input{ width:18px; height:18px; flex-shrink:0; accent-color:var(--accent2); cursor:pointer; }
   .check-row span{ font-size:14px; }
@@ -1153,6 +1219,44 @@
   .tr-body.analyzing{ opacity:.35; pointer-events:none; }
   .tr-body .bubble{ max-width:100%; }
 
+  /* Coaching notes under the learner's own lines. Outside the bubble on
+     purpose: the bubble is what they said, this is the feedback on it, and
+     the user bubble's bright gradient is no place for small dim text.     */
+  .tips{
+    align-self:stretch;
+    margin-top:-2px;
+    padding:9px 12px;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-left:2px solid var(--accent2);
+    border-radius:10px;
+    display:flex;
+    flex-direction:column;
+    gap:5px;
+    white-space:normal;
+    text-align:left;
+  }
+  .tips.is-loading{
+    flex-direction:row;
+    align-items:center;
+    gap:8px;
+    font-size:12px;
+    font-style:italic;
+    color:var(--dim);
+  }
+  .tip-row{ display:flex; gap:8px; font-size:12px; line-height:1.45; }
+  .tip-label{
+    flex:0 0 46px;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:var(--dim);
+    padding-top:2px;
+  }
+  .tip-fix{ font-weight:600; }
+  .tip-say{ color:var(--accent2); font-style:italic; }
+  .tip-ok{ font-size:12px; color:#6bd47f; }
+
   /* Words picked from breakdowns during the call, waiting on a keep/forget
      decision. Sits above the transcript because it's the decision the
      review exists to collect first.                                       */
@@ -1500,6 +1604,11 @@
     <!-- Things the learner could say next, each with an English gloss.
          Filled in after the coach finishes a turn; off unless the "Reply
          suggestions" setting is on. -->
+    <!-- The learner's own flashcard words, as raw material for whatever they
+         want to say. Built on the device, so no model call; off unless the
+         "Flashcard words" setting is on. -->
+    <div class="deck-strip hidden" id="deckStrip" aria-live="polite"></div>
+
     <div class="suggestions hidden" id="suggestions" aria-live="polite"></div>
 
     <div class="orb-section">
@@ -1649,6 +1758,7 @@
       <div class="picks-list" id="callPicksList"></div>
     </div>
     <p class="hint">Tap any underlined word or phrase to translate it and save it as a flashcard.</p>
+    <p class="hint">Grammar and pronunciation notes appear under each line you spoke. They are worked out from the words you used &mdash; the app keeps the transcript, not the recording, so they can't tell you how you actually sounded.</p>
     <div class="pill-toggle" id="segToggle">
       <button type="button" class="pill-toggle-btn active" data-seg="words">Words</button>
       <button type="button" class="pill-toggle-btn" data-seg="phrases">Phrases</button>
@@ -1889,7 +1999,14 @@
         <input type="checkbox" id="s_suggestionsInput" />
         <span>Reply suggestions</span>
       </label>
-      <div class="hint" style="margin-top:6px;">During a call, show a few things you could say next, with English translations.</div>
+      <div class="hint" style="margin-top:6px;">During a call, show a few things you could say next, with English translations. Switch it off for a quieter screen &mdash; the strip goes at once, mid-call included.</div>
+    </div>
+    <div class="field">
+      <label class="check-row" for="s_deckPromptsInput">
+        <input type="checkbox" id="s_deckPromptsInput" />
+        <span>Flashcard words</span>
+      </label>
+      <div class="hint" style="margin-top:6px;">A strip of words from this language's deck during a call, the ones due first, so you can work them in yourself. Tap one to hear it; words you manage to use get ticked off. Comes straight from your cards, so it costs nothing and never waits on the AI.</div>
     </div>
     <div class="field">
       <label class="check-row" for="s_pronunciationAboveInput">
@@ -2687,6 +2804,73 @@ async function translateLines(lines, langCode) {
   return lines.map((_, i) => (typeof out[i] === "string" ? out[i] : ""));
 }
 
+// Grammar and pronunciation notes for the learner's own lines, shown under
+// each of them in the end-of-call review.
+//
+// Text only, and deliberately so: the app keeps the transcript, not the
+// recording, so the sound note is about the words they chose — the sound in
+// that sentence an English speaker most often gets wrong — and never a
+// verdict on how they actually sounded. The label says "Sound", not "You
+// mispronounced", and the modal says as much in as many words.
+async function fetchSpeakingTips(turns, langCode) {
+  const settings = loadSettings();
+  const langName = languageName(langCode);
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${settings.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      // Same model as the respellings: judging a learner's sentence is the
+      // kind of call the mini model is visibly worse at.
+      model: PHONETIC_MODEL,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            phoneticInstructions(langCode) +
+            `\n\nYou are also correcting a learner's spoken ${langName}. Each ` +
+            `input entry is something they said, with the coach's line before ` +
+            `it for context. These are speech transcripts, so ignore missing ` +
+            `punctuation and capitalisation and never comment on either.\n\n` +
+            `Respond with strict JSON: {"tips": [{"fix": "...", "grammar": ` +
+            `"...", "sound": "..."}]} with exactly ${turns.length} entries, ` +
+            `one per input entry, in the same order.\n` +
+            `  "fix" — the same thing said correctly and naturally in ` +
+            `${langName}, keeping their meaning and roughly their level. ` +
+            `Empty string if what they said was already correct and natural.\n` +
+            `  "grammar" — one short sentence of plain English saying what to ` +
+            `change and why, naming the form involved. Empty string when there ` +
+            `is nothing to fix. Never praise, and never just repeat the ` +
+            `sentence back.\n` +
+            `  "sound" — the one word in their line an English speaker most ` +
+            `often says wrong: the word, its respelling, then a few words on ` +
+            `what the mouth has to do. Plain English, no IPA.`,
+        },
+        { role: "user", content: JSON.stringify(turns) },
+      ],
+    }),
+  });
+  if (!resp.ok) throw new Error(`Speaking tips request failed (${resp.status})`);
+  const data = await resp.json();
+  let parsed;
+  try {
+    parsed = JSON.parse(data?.choices?.[0]?.message?.content || "{}");
+  } catch (e) {
+    throw new Error("Speaking tips response was not valid JSON");
+  }
+  const tips = Array.isArray(parsed?.tips) ? parsed.tips : [];
+  // Aligned by index, so one missing entry doesn't cost the rest their notes.
+  return turns.map((_, i) => ({
+    fix: String(tips[i]?.fix || "").trim(),
+    grammar: String(tips[i]?.grammar || "").trim(),
+    sound: String(tips[i]?.sound || "").trim(),
+  }));
+}
+
 async function analyzeTranscriptSegments(lines, langCode) {
   const settings = loadSettings();
   const langName = languageName(langCode);
@@ -3270,6 +3454,7 @@ function clearTranscript() {
   glossCache.clear();
   callPicks = []; // undecided picks go with the conversation they came from
   clearSuggestions();
+  clearDeckStrip();
   $("transcript").innerHTML = '<div class="transcript-empty" id="transcriptEmpty">Conversation will appear here.</div>';
 }
 
@@ -3616,6 +3801,120 @@ async function refreshSuggestions() {
     clearSuggestions();
   }
 }
+
+/* ---------------------------------------------------------------------- */
+/* Flashcard words strip                                                  */
+/* ---------------------------------------------------------------------- */
+/* The reply suggestions' opposite number. Instead of a whole sentence to
+   read out, the learner's own cards — due ones first — offered as raw
+   material for whatever they decide to say themselves. Built from the deck
+   on the device, so it costs no tokens and waits on nothing, and a word
+   they manage to work in is ticked off where they can see it.            */
+
+const DECK_STRIP_SIZE = 10;
+let deckStripItems = [];
+
+function deckPromptsEnabled() {
+  const settings = loadSettings();
+  // Undefined on saves that predate the setting — treat those as on.
+  return !!settings && settings.deckPrompts !== false;
+}
+
+function clearDeckStrip() {
+  deckStripItems = [];
+  const el = $("deckStrip");
+  el.innerHTML = "";
+  el.classList.add("hidden");
+}
+
+// Substring rather than whole-word matching, so it also works in languages
+// that put no spaces between words.
+function deckWordUsed(word) {
+  const key = word.toLowerCase();
+  return transcriptHistory.some(
+    (e) => e.role === "user" && e.text.toLowerCase().includes(key));
+}
+
+function refreshDeckStrip() {
+  if (!deckPromptsEnabled()) { clearDeckStrip(); return; }
+  deckStripItems = studiedWordsForSuggestions(currentSessionLanguage)
+    .slice(0, DECK_STRIP_SIZE)
+    .map((card) => ({
+      id: card.id,
+      word: card.word,
+      translation: card.translation || "",
+      pronunciation: card.pronunciation || "",
+      hasAudio: !!card.hasAudio,
+    }));
+  renderDeckStrip();
+}
+
+function renderDeckStrip() {
+  const el = $("deckStrip");
+  el.innerHTML = "";
+  if (!deckStripItems.length) { el.classList.add("hidden"); return; }
+  const lang = currentSessionLanguage;
+  const above = pronunciationAbove(lang);
+
+  const label = document.createElement("span");
+  label.className = "deck-strip-label";
+  label.textContent = "Your words";
+  el.appendChild(label);
+
+  deckStripItems.forEach((item, index) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "deck-chip";
+    chip.dataset.index = String(index);
+    chip.classList.toggle("is-used", deckWordUsed(item.word));
+
+    const word = document.createElement("div");
+    word.className = "deck-chip-word";
+    if (above && item.pronunciation) word.innerHTML = rubyHtml(item.word, item.pronunciation, lang);
+    else word.textContent = item.word;
+    chip.appendChild(word);
+
+    if (item.translation) {
+      const en = document.createElement("div");
+      en.className = "deck-chip-en";
+      en.textContent = item.translation;
+      chip.appendChild(en);
+    }
+    // Already sitting over the word when that setting is on; otherwise it
+    // waits behind a tap so the strip stays one line tall.
+    if (item.pronunciation && !above) {
+      const say = document.createElement("div");
+      say.className = "deck-chip-say";
+      say.textContent = displayRespelling(item.pronunciation, lang);
+      chip.appendChild(say);
+    }
+    el.appendChild(chip);
+  });
+  el.classList.remove("hidden");
+  el.scrollLeft = 0;
+}
+
+// Ticks off whatever they've just said without repainting the strip, which
+// would throw away where they had scrolled to mid-call.
+function markDeckStripUsed() {
+  $$(".deck-chip", $("deckStrip")).forEach((chip) => {
+    const item = deckStripItems[Number(chip.dataset.index)];
+    if (item) chip.classList.toggle("is-used", deckWordUsed(item.word));
+  });
+}
+
+// Tapping opens one chip: the respelling slides in and the card's own audio
+// plays, so a word can be heard and copied in the middle of a call.
+$("deckStrip").addEventListener("click", (e) => {
+  const chip = e.target.closest(".deck-chip");
+  if (!chip) return;
+  const item = deckStripItems[Number(chip.dataset.index)];
+  if (!item) return;
+  const opening = !chip.classList.contains("is-open");
+  $$(".deck-chip", $("deckStrip")).forEach((c) => c.classList.remove("is-open"));
+  chip.classList.toggle("is-open", opening);
+  if (opening && item.hasAudio) playCardAudio(item.id);
+});
 
 /* ---------------------------------------------------------------------- */
 /* Word-by-word breakdown of a coach turn                                 */
@@ -4088,6 +4387,7 @@ function setTranscriptFinal(role, text) {
     }
   }
   if (role === "user") userBubbleEl = null; else assistantBubbleEl = null;
+  if (role === "user") markDeckStripUsed(); // tick off a deck word they just used
   transcriptScrollToBottom();
   return entry;
 }
@@ -4148,6 +4448,7 @@ async function startSession() {
   clearTranscript();
   currentSessionLanguage = settings.language || "en";
   currentMode = settings.mode || MODE_ECONOMY;
+  refreshDeckStrip(); // their own words are ready before the coach speaks
   setState("connecting");
 
   try {
@@ -4666,6 +4967,7 @@ function endSession(silent) {
   assistantAudioActive = false;
   economyTurnId += 1; // anything still in flight belongs to a call that's over
   clearSuggestions();
+  clearDeckStrip();
   if (!silent) setState("idle");
 }
 
@@ -4761,6 +5063,16 @@ let segmentMode = "words";   // "words" | "phrases" | "translation"
 let segmentationGeneration = 0; // prevents stale analysis replacing a newer review
 let lineTranslations = [];   // parallel to transcriptHistory: English for each line
 let translationsPending = false;
+let lineTips = [];           // parallel to transcriptHistory: notes on the learner's lines
+let tipsPending = false;
+
+// The line the learner was answering, for the tips request.
+function lastCoachLineBefore(history, index) {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (history[i].role === "assistant") return history[i].text;
+  }
+  return "";
+}
 
 async function openTranscriptReview() {
   const generation = ++segmentationGeneration;
@@ -4789,6 +5101,33 @@ async function openTranscriptReview() {
       translationsPending = false;
       renderTranscriptReviewBody();
     });
+  // Notes on the learner's own lines, fetched alongside the translation so
+  // both are usually on screen by the time the word boundaries settle.
+  lineTips = [];
+  const spoken = historySnapshot
+    .map((entry, i) => ({ entry, i }))
+    .filter(({ entry }) => entry.role === "user");
+  tipsPending = spoken.length > 0;
+  if (spoken.length) {
+    fetchSpeakingTips(
+      spoken.map(({ entry, i }) => ({
+        said: entry.text,
+        coachSaidBefore: lastCoachLineBefore(historySnapshot, i),
+      })),
+      currentSessionLanguage
+    )
+      .then((tips) => {
+        if (generation !== segmentationGeneration) return;
+        spoken.forEach(({ i }, n) => { lineTips[i] = tips[n]; });
+      })
+      .catch((err) => console.error("[VoiceCoach] speaking tips failed:", err))
+      .finally(() => {
+        if (generation !== segmentationGeneration) return;
+        tipsPending = false;
+        renderTranscriptReviewBody();
+      });
+  }
+
   renderTranscriptReviewBody();
   $("trAnalyzing").classList.remove("hidden");
   $("trBody").classList.add("analyzing");
@@ -4871,7 +5210,49 @@ function renderTranscriptReviewBody() {
       bubble.appendChild(en);
     }
     body.appendChild(bubble);
+    if (entry.role === "user") {
+      const tips = renderLineTips(lineTips[i]);
+      if (tips) body.appendChild(tips);
+    }
   });
+}
+
+function tipRow(label, text, className) {
+  const row = document.createElement("div");
+  row.className = "tip-row";
+  const tag = document.createElement("span");
+  tag.className = "tip-label";
+  tag.textContent = label;
+  const value = document.createElement("span");
+  if (className) value.className = className;
+  value.textContent = text;
+  row.append(tag, value);
+  return row;
+}
+
+// One line's notes, or the waiting state while they're being worked out.
+// Null when there is nothing to show and nothing on the way.
+function renderLineTips(tip) {
+  const box = document.createElement("div");
+  box.className = "tips";
+  if (!tip) {
+    if (!tipsPending) return null;
+    box.classList.add("is-loading");
+    const spinner = document.createElement("span");
+    spinner.className = "spinner";
+    box.append(spinner, document.createTextNode("Checking grammar and pronunciation…"));
+    return box;
+  }
+  if (tip.fix) box.appendChild(tipRow("Say", tip.fix, "tip-fix"));
+  if (tip.grammar) box.appendChild(tipRow("Grammar", tip.grammar));
+  if (tip.sound) box.appendChild(tipRow("Sound", tip.sound, "tip-say"));
+  if (!box.children.length) {
+    const ok = document.createElement("div");
+    ok.className = "tip-ok";
+    ok.textContent = "Nothing to fix in this one.";
+    box.appendChild(ok);
+  }
+  return box;
 }
 
 function markWordAdded(word) {
@@ -6239,6 +6620,7 @@ $("gearBtn").addEventListener("click", () => {
   // Saves that predate this setting have it undefined — default it on.
   $("s_suggestionsInput").checked = settings.suggestions !== false;
   $("s_pronunciationAboveInput").checked = settings.pronunciationAbove !== false;
+  $("s_deckPromptsInput").checked = settings.deckPrompts !== false;
   $("s_retentionSelect").value = String(desiredRetention());
   $("settingsModal").classList.remove("hidden");
 });
@@ -6265,6 +6647,7 @@ $("saveSettingsBtn").addEventListener("click", () => {
     model: $("s_modelInput").value.trim() || "gpt-realtime",
     suggestions: $("s_suggestionsInput").checked,
     pronunciationAbove: $("s_pronunciationAboveInput").checked,
+    deckPrompts: $("s_deckPromptsInput").checked,
     retention: Number($("s_retentionSelect").value) || DEFAULT_RETENTION,
   }));
   // Switching languages mid-conversation would leave a half-foreign,
@@ -6274,6 +6657,11 @@ $("saveSettingsBtn").addEventListener("click", () => {
     endSession();
     clearTranscript();
   }
+  // Both call-time helpers take effect at once rather than next session, so
+  // switching one off silences it there and then.
+  if (!suggestionsEnabled()) clearSuggestions();
+  if (currentState === "idle" || currentState === "error") clearDeckStrip();
+  else refreshDeckStrip();
   renderLangBar();
   renderFlashcardsScreen(); // pronunciation-above changes how cards are drawn
   $("settingsModal").classList.add("hidden");
